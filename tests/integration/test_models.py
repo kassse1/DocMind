@@ -2,15 +2,21 @@ import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
 import pytest
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import DataError
 from sqlalchemy.orm import Session
 
 from app.models import (
+    EMBEDDING_DIMENSION,
     Conversation,
     Document,
     DocumentChunk,
     DocumentStatus,
+    Job,
+    JobKind,
+    JobStatus,
     Message,
     MessageRole,
     User,
@@ -44,6 +50,27 @@ def _document(session: Session, user: User, seed: str = "file-1") -> Document:
     return doc
 
 
+def _unit_vector(axis: int = 0) -> np.ndarray:
+    vector = np.zeros(EMBEDDING_DIMENSION, dtype=np.float32)
+    vector[axis] = 1.0
+    return vector
+
+
+def _chunk(content: str = "c", **kwargs: object) -> DocumentChunk:
+    """A chunk with valid values for every required column; override any via kwargs."""
+    values: dict[str, object] = {
+        "chunk_index": 0,
+        "content": content,
+        "char_start": 0,
+        "char_end": max(len(content), 1),
+        "token_count": 1,
+        "embedding": _unit_vector(),
+        "embedding_model": "test-model",
+    }
+    values.update(kwargs)
+    return DocumentChunk(content=values.pop("content"), **values)
+
+
 def _count(session: Session, model: type) -> int:
     return session.scalar(select(func.count()).select_from(model))
 
@@ -52,9 +79,9 @@ def test_relationships_round_trip(db_session: Session) -> None:
     user = _user(db_session)
     doc = _document(db_session, user)
     # Added out of order to prove relationship ordering by chunk_index.
-    doc.chunks.append(DocumentChunk(chunk_index=1, content="second", page_number=2))
+    doc.chunks.append(_chunk("second", chunk_index=1, page_number=2))
     doc.chunks.append(
-        DocumentChunk(chunk_index=0, content="Қазақстан", page_number=1, chunk_metadata={"k": "қ"})
+        _chunk("Қазақстан", chunk_index=0, page_number=1, chunk_metadata={"k": "қ"})
     )
     conv = Conversation(user=user, title="Q&A")
     conv.messages.append(Message(role=MessageRole.USER, content="question"))
@@ -99,14 +126,14 @@ def test_duplicate_chunk_index_rejected_within_document(db_session: Session) -> 
     doc_b = _document(db_session, user, "b")
     db_session.add_all(
         [
-            DocumentChunk(document=doc_a, chunk_index=0, content="x"),
+            _chunk("x", document=doc_a),
             # Same index in a different document is fine.
-            DocumentChunk(document=doc_b, chunk_index=0, content="y"),
+            _chunk("y", document=doc_b),
         ]
     )
     db_session.flush()
 
-    db_session.add(DocumentChunk(document_id=doc_a.id, chunk_index=0, content="dup"))
+    db_session.add(_chunk("dup", document_id=doc_a.id))
     expect_violation(db_session, "uq_document_chunks_document_id_chunk_index", db_session.flush)
 
 
@@ -146,7 +173,7 @@ def test_database_cascade_on_raw_user_delete(db_session: Session) -> None:
     """ON DELETE CASCADE lives in PostgreSQL, so it also holds for raw SQL deletes."""
     user = _user(db_session)
     doc = _document(db_session, user)
-    doc.chunks.append(DocumentChunk(chunk_index=0, content="c"))
+    doc.chunks.append(_chunk("c"))
     conv = Conversation(user=user)
     conv.messages.append(Message(role=MessageRole.ASSISTANT, content="a", citations=[]))
     db_session.add(conv)
@@ -163,8 +190,8 @@ def test_orm_delete_document_removes_only_its_chunks(db_session: Session) -> Non
     user = _user(db_session)
     doomed = _document(db_session, user, "doomed")
     kept = _document(db_session, user, "kept")
-    doomed.chunks.append(DocumentChunk(chunk_index=0, content="d"))
-    kept.chunks.append(DocumentChunk(chunk_index=0, content="k"))
+    doomed.chunks.append(_chunk("d"))
+    kept.chunks.append(_chunk("k"))
     db_session.flush()
 
     db_session.delete(doomed)
@@ -205,21 +232,78 @@ def test_document_check_constraints(db_session: Session, sql: str, constraint: s
 
 
 @pytest.mark.parametrize(
-    ("chunk_index", "page_number", "constraint"),
+    ("overrides", "constraint"),
     [
-        (-1, None, "ck_document_chunks_chunk_index_non_negative"),
-        (0, 0, "ck_document_chunks_page_number_positive"),
+        ({"chunk_index": -1}, "ck_document_chunks_chunk_index_non_negative"),
+        ({"page_number": 0}, "ck_document_chunks_page_number_positive"),
+        ({"char_start": -1}, "ck_document_chunks_char_range_valid"),
+        ({"char_start": 5, "char_end": 5}, "ck_document_chunks_char_range_valid"),
+        ({"token_count": -1}, "ck_document_chunks_token_count_non_negative"),
     ],
-    ids=["chunk_index", "page_number"],
+    ids=["chunk_index", "page_number", "char_start", "empty_range", "token_count"],
 )
 def test_chunk_check_constraints(
-    db_session: Session, chunk_index: int, page_number: int | None, constraint: str
+    db_session: Session, overrides: dict[str, int], constraint: str
 ) -> None:
     doc = _document(db_session, _user(db_session))
-    db_session.add(
-        DocumentChunk(document=doc, chunk_index=chunk_index, page_number=page_number, content="c")
-    )
+    db_session.add(_chunk(document=doc, **overrides))
     expect_violation(db_session, constraint, db_session.flush)
+
+
+def test_chunk_embedding_round_trips_as_float_vector(db_session: Session) -> None:
+    doc = _document(db_session, _user(db_session))
+    vector = np.linspace(-1, 1, EMBEDDING_DIMENSION, dtype=np.float32)
+    doc.chunks.append(_chunk(embedding=vector, embedding_model="intfloat/multilingual-e5-small"))
+    db_session.flush()
+    db_session.expire_all()
+
+    [chunk] = db_session.get(Document, doc.id).chunks
+    assert len(chunk.embedding) == EMBEDDING_DIMENSION
+    np.testing.assert_allclose(np.asarray(chunk.embedding), vector, rtol=1e-6)
+    assert chunk.embedding_model == "intfloat/multilingual-e5-small"
+
+
+def test_chunk_embedding_with_wrong_dimension_is_rejected(db_session: Session) -> None:
+    doc = _document(db_session, _user(db_session))
+    db_session.add(_chunk(document=doc, embedding=np.ones(EMBEDDING_DIMENSION + 1)))
+    with pytest.raises(DataError):
+        db_session.flush()
+    db_session.rollback()
+
+
+def _job(document: Document, status: JobStatus = JobStatus.QUEUED) -> Job:
+    return Job(document_id=document.id, kind=JobKind.INDEX_DOCUMENT, status=status)
+
+
+def test_job_defaults(db_session: Session) -> None:
+    doc = _document(db_session, _user(db_session))
+    job = Job(document_id=doc.id, kind=JobKind.INDEX_DOCUMENT)
+    db_session.add(job)
+    db_session.flush()
+    db_session.refresh(job)
+    assert job.status is JobStatus.QUEUED
+    assert job.attempts == 0
+    assert job.run_after is not None
+    assert job.locked_at is None
+
+
+def test_only_one_active_job_per_document(db_session: Session) -> None:
+    doc = _document(db_session, _user(db_session))
+    # Finished jobs are history and do not block a new one.
+    db_session.add_all([_job(doc, JobStatus.SUCCEEDED), _job(doc, JobStatus.FAILED), _job(doc)])
+    db_session.flush()
+
+    db_session.add(_job(doc, JobStatus.RUNNING))
+    expect_violation(db_session, "uq_jobs_document_id_active", db_session.flush)
+
+
+def test_jobs_are_deleted_with_their_document(db_session: Session) -> None:
+    doc = _document(db_session, _user(db_session))
+    db_session.add(_job(doc))
+    db_session.flush()
+
+    db_session.execute(text("DELETE FROM documents WHERE id = :id"), {"id": doc.id})
+    assert _count(db_session, Job) == 0
 
 
 def test_message_role_check_constraint(db_session: Session) -> None:

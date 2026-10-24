@@ -2,6 +2,7 @@ import enum
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -16,6 +17,11 @@ from app.models.base import (
 
 if TYPE_CHECKING:
     from app.models.user import User
+
+
+# Size of document_chunks.embedding. It must match the configured embedding model
+# (multilingual-e5-small); switching to a model with another size needs a migration.
+EMBEDDING_DIMENSION = 384
 
 
 class DocumentStatus(enum.StrEnum):
@@ -76,6 +82,8 @@ class DocumentChunk(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         UniqueConstraint("document_id", "chunk_index"),
         CheckConstraint("chunk_index >= 0", name="chunk_index_non_negative"),
         CheckConstraint("page_number IS NULL OR page_number >= 1", name="page_number_positive"),
+        CheckConstraint("char_start >= 0 AND char_end > char_start", name="char_range_valid"),
+        CheckConstraint("token_count >= 0", name="token_count_non_negative"),
     )
 
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
@@ -83,6 +91,17 @@ class DocumentChunk(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     content: Mapped[str] = mapped_column(Text)
     # NULL for formats without pages (TXT, DOCX).
     page_number: Mapped[int | None]
+    # Offsets into the normalized text of the page (or of the whole document if it has no
+    # pages): content == page_text[char_start:char_end].
+    char_start: Mapped[int]
+    char_end: Mapped[int]
+    token_count: Mapped[int]
+    # Unit-length vector. NOT NULL: chunks are written only together with their embeddings.
+    # Read back as list[float]; writes accept lists or numpy arrays.
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSION))
+    # Vectors of different models are not comparable even at equal dimension,
+    # so search must filter on the model that embedded the query.
+    embedding_model: Mapped[str] = mapped_column(String(255))
     # "metadata" is reserved on declarative classes, so the attribute is named differently.
     chunk_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, default=dict, server_default="{}"

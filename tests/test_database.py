@@ -9,7 +9,7 @@ from app.api.v1 import health as health_module
 from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
 from app.main import create_app
-from app.models import Base
+from app.models import EMBEDDING_DIMENSION, Base
 
 # Nothing listens on port 1, so connecting fails fast with "connection refused".
 UNREACHABLE_URL = "postgresql+psycopg://docmind:SUPER-SECRET-PW@127.0.0.1:1/docmind"
@@ -113,9 +113,11 @@ def test_all_models_registered_on_metadata() -> None:
         "document_chunks",
         "conversations",
         "messages",
+        "jobs",
     }
 
 
-def test_no_embedding_columns_yet() -> None:
-    chunk_columns = set(Base.metadata.tables["document_chunks"].columns.keys())
-    assert not any("embedding" in name for name in chunk_columns)
+def test_embedding_column_has_fixed_dimension() -> None:
+    column = Base.metadata.tables["document_chunks"].columns["embedding"]
+    assert column.type.dim == EMBEDDING_DIMENSION
+    assert not column.nullable

@@ -21,6 +21,7 @@ dependencies = [
     "pymupdf>=2.0,<3",                # PDF text with page numbers (AGPL-3.0 license)
     "python-docx>=1.1,<2",            # DOCX paragraphs and tables
     "numpy>=2.0",                     # embedding vectors
+    "pgvector>=0.5,<0.6",             # SQLAlchemy Vector type for the pgvector extension
 ]
 
 [project.optional-dependencies]
