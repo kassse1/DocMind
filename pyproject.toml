@@ -16,6 +16,10 @@ dependencies = [
     "sqlalchemy>=2.0.30",
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
+    # Upload parsing. Upper bounds: a parser major release can silently change extracted text.
+    "python-multipart>=0.0.18,<0.1",  # required by FastAPI for multipart/UploadFile
+    "pymupdf>=2.0,<3",                # PDF text with page numbers (AGPL-3.0 license)
+    "python-docx>=1.1,<2",            # DOCX paragraphs and tables
 ]
 
 [project.optional-dependencies]
