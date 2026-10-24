@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +45,27 @@ class Settings(BaseSettings):
     # Development-only identity until authentication exists (Phase 8). Ignored in prod,
     # where document endpoints refuse requests instead of falling back to a shared user.
     dev_user_email: str = "dev@docmind.local"
+
+    # Embeddings. "fake" gives deterministic, meaningless vectors (tests/CI only).
+    embedding_backend: Literal["sentence-transformers", "fake"] = "sentence-transformers"
+    embedding_model: str = "intfloat/multilingual-e5-small"
+    # None = let sentence-transformers choose (CUDA if available, else CPU).
+    embedding_device: str | None = None
+    embedding_batch_size: int = Field(default=32, ge=1, le=256)
+    # None = the Hugging Face default cache (~/.cache/huggingface).
+    embedding_cache_dir: Path | None = None
+    # false = never download; the model must already be in the cache.
+    embedding_allow_download: bool = True
+
+    # Chunking, measured in tokens of the embedding model's tokenizer.
+    chunk_size_tokens: int = Field(default=256, ge=16)
+    chunk_overlap_tokens: int = Field(default=32, ge=0)
+
+    @model_validator(mode="after")
+    def _check_chunking(self) -> "Settings":
+        if self.chunk_overlap_tokens >= self.chunk_size_tokens:
+            raise ValueError("chunk_overlap_tokens must be smaller than chunk_size_tokens")
+        return self
 
 
 @lru_cache
