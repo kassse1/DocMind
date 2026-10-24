@@ -65,7 +65,10 @@ def _corrupt(kind: str) -> IngestionError:
 
 def _extract_pdf(path: Path, limits: ExtractionLimits) -> tuple[list[ExtractedPage], int]:
     try:
-        document = pymupdf.open(path, filetype="pdf")
+        # Open from memory (size is already bounded by the upload limit): when opening a
+        # damaged file by path, PyMuPDF can keep the OS handle open, which on Windows
+        # blocks deleting the temp file afterwards.
+        document = pymupdf.open(stream=path.read_bytes(), filetype="pdf")
     except Exception as exc:  # PyMuPDF raises several unrelated exception types
         raise _corrupt("PDF") from exc
 

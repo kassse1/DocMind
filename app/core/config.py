@@ -1,6 +1,7 @@
 """Application settings loaded from environment variables (prefix DOCMIND_) and .env."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr
@@ -33,6 +34,17 @@ class Settings(BaseSettings):
     db_connect_timeout_s: int = Field(default=3, ge=1)
     # Upper bound for the readiness probe query, so a stuck database cannot hang the probe.
     db_readiness_timeout_ms: int = Field(default=2000, ge=100)
+
+    # Uploaded originals live here, outside the repository, under server-generated names.
+    storage_dir: Path = Path.home() / ".docmind" / "storage"
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
+    max_pdf_pages: int = Field(default=2000, ge=1)
+    # Zip bomb guard: total uncompressed size of all members of a DOCX archive.
+    max_docx_uncompressed_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
+
+    # Development-only identity until authentication exists (Phase 8). Ignored in prod,
+    # where document endpoints refuse requests instead of falling back to a shared user.
+    dev_user_email: str = "dev@docmind.local"
 
 
 @lru_cache
