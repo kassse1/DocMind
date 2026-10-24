@@ -34,7 +34,7 @@ def upload_document(
     storage: Annotated[FileStorage, Depends(get_storage)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> DocumentUploadResponse:
-    """Upload a document. It is validated and parsed now, and indexed later (Phase 4)."""
+    """Upload a document. It is validated and parsed now; a background worker indexes it."""
     result = document_service.upload_document(session, storage, settings, user, file)
     return DocumentUploadResponse(
         document=DocumentRead.model_validate(result.document),

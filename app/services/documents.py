@@ -1,4 +1,5 @@
-"""Upload use case: validate, extract, persist metadata, store the original file.
+"""Upload use case: validate, extract, persist metadata, store the original file, and
+queue an indexing job in the same transaction (the worker does the heavy part).
 
 Consistency rule: a database row is committed only after its file is in place, and the
 file is removed again if the commit fails. A crash between the two steps can leave an
@@ -29,6 +30,7 @@ from app.ingestion.file_types import (
 from app.ingestion.parsers import ExtractedText, ExtractionLimits, extract_text
 from app.ingestion.storage import FileStorage
 from app.models import Document, User
+from app.services.jobs import enqueue_indexing
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +163,8 @@ def _upload(
                 raise
             # A concurrent request inserted the same file between our check and flush.
             raise _duplicate_error(_find_duplicate(session, user.id, content_hash)) from None
+        # Same transaction as the document row: every committed upload has a job.
+        enqueue_indexing(session, document.id)
 
         storage.store(temp_path, document.id)
         try:

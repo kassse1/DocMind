@@ -8,6 +8,7 @@ from app.ingestion.errors import IngestionError
 from app.ingestion.file_types import (
     DOCX_MEDIA_TYPE,
     FileKind,
+    kind_for_media_type,
     resolve_file_type,
     sanitize_filename,
     verify_magic_bytes,
@@ -234,3 +235,21 @@ def test_extract_txt_binary_is_rejected(tmp_path: Path) -> None:
 def test_extract_whitespace_only_txt_is_rejected(tmp_path: Path) -> None:
     path = _write(tmp_path, b" \n\t\r\n ")
     assert _error_code(lambda: extract_text(FileKind.TXT, path, LIMITS)) == "no_text_extracted"
+
+
+@pytest.mark.parametrize(
+    ("media_type", "kind"),
+    [
+        ("application/pdf", FileKind.PDF),
+        (DOCX_MEDIA_TYPE, FileKind.DOCX),
+        ("text/plain", FileKind.TXT),
+    ],
+)
+def test_kind_for_stored_media_type(media_type: str, kind: FileKind) -> None:
+    assert kind_for_media_type(media_type) is kind
+
+
+def test_kind_for_unknown_media_type_is_rejected() -> None:
+    with pytest.raises(IngestionError) as exc_info:
+        kind_for_media_type("application/zip")
+    assert exc_info.value.code == "unsupported_file_type"

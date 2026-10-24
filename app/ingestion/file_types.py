@@ -98,6 +98,14 @@ def resolve_file_type(filename: str, declared_content_type: str | None) -> FileT
     return spec
 
 
+def kind_for_media_type(media_type: str) -> FileKind:
+    """Map a stored (canonical) media type back to its parser, e.g. for re-extraction."""
+    for spec in SUPPORTED_TYPES.values():
+        if spec.media_type == media_type:
+            return spec.kind
+    raise IngestionError("unsupported_file_type", "Unsupported file type.")
+
+
 def verify_magic_bytes(spec: FileTypeSpec, header: bytes) -> None:
     """Check that the first bytes of the file agree with the extension."""
     if spec.kind is FileKind.PDF:

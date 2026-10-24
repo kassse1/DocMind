@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     # Chunking, measured in tokens of the embedding model's tokenizer.
     chunk_size_tokens: int = Field(default=256, ge=16)
     chunk_overlap_tokens: int = Field(default=32, ge=0)
+    # Memory bound for one document: all its chunks and vectors are held until the final write.
+    max_chunks_per_document: int = Field(default=20_000, ge=1)
+
+    # Indexing worker (python -m app.worker).
+    worker_poll_interval_s: float = Field(default=2.0, gt=0)
+    # A running job whose worker has been silent this long is assumed dead and is reclaimed.
+    job_lease_timeout_s: int = Field(default=1800, ge=10)
+    job_max_attempts: int = Field(default=3, ge=1)
+    # Retry n waits n * this many seconds.
+    job_retry_delay_s: int = Field(default=30, ge=0)
 
     @model_validator(mode="after")
     def _check_chunking(self) -> "Settings":
