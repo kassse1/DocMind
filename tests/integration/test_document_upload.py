@@ -5,6 +5,7 @@ starts and ends with empty tables.
 """
 
 import hashlib
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -277,3 +278,24 @@ def test_same_file_for_different_users_is_allowed(
     assert _upload(client, "a.txt", data).status_code == 201
     assert len(_documents(pg_engine)) == 2
     assert len(_stored_files(storage_dir)) == 2
+
+
+def test_logs_and_errors_never_contain_content_or_filename(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    secret_text = "CONFIDENTIAL-BODY-7f3a"
+    secret_name = "salary-review-7f3a"
+    caplog.set_level(logging.DEBUG)
+
+    ok = _upload(client, f"{secret_name}.txt", secret_text.encode())
+    rejected = _upload(client, f"{secret_name}.pdf", f"%PDF-1.7 {secret_text}".encode())
+
+    assert ok.status_code == 201
+    assert rejected.status_code == 422
+    assert secret_text not in rejected.text
+    assert secret_name not in rejected.text
+    assert secret_text not in caplog.text
+    assert secret_name not in caplog.text
+    # The upload is still traceable by id and reason code.
+    assert ok.json()["document"]["id"] in caplog.text
+    assert "code=corrupt_file" in caplog.text
