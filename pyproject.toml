@@ -13,6 +13,9 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +31,9 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "integration: needs a real PostgreSQL database (set DOCMIND_TEST_DATABASE_URL)",
+]
 
 [tool.ruff]
 line-length = 100
@@ -39,3 +45,7 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "N"]
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's Depends() in argument defaults is idiomatic.
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]
+
+[tool.ruff.lint.isort]
+# The local alembic/ migrations folder would otherwise make ruff treat the package as first-party.
+known-third-party = ["alembic"]

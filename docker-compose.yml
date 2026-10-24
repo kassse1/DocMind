@@ -1,0 +1,26 @@
+services:
+  postgres:
+    # pgvector image so Phase 4 needs no image swap; the extension is NOT enabled yet
+    # (that will be an explicit Alembic migration: CREATE EXTENSION vector).
+    image: pgvector/pgvector:pg17
+    container_name: docmind-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-docmind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-docmind}
+    ports:
+      # Bound to localhost only: the dev database is not exposed to the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - docmind_pgdata:/var/lib/postgresql/data
+      # Runs only on first start with an empty volume: creates the docmind_test database.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  docmind_pgdata:

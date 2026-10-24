@@ -8,3 +8,8 @@ class HealthResponse(BaseModel):
     app: str
     version: str
     environment: str
+
+
+class ReadinessResponse(BaseModel):
+    status: Literal["ready"]
+    checks: dict[str, Literal["ok"]]

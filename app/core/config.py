@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +21,18 @@ class Settings(BaseSettings):
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+    # SecretStr keeps the password out of repr(), logs and tracebacks.
+    # Placeholder for local development only; set DOCMIND_DATABASE_URL in .env or the environment.
+    database_url: SecretStr = SecretStr(
+        "postgresql+psycopg://docmind:docmind@127.0.0.1:5432/docmind"
+    )
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=5, ge=0)
+    db_pool_timeout_s: float = Field(default=5.0, gt=0)
+    db_connect_timeout_s: int = Field(default=3, ge=1)
+    # Upper bound for the readiness probe query, so a stuck database cannot hang the probe.
+    db_readiness_timeout_ms: int = Field(default=2000, ge=100)
 
 
 @lru_cache
