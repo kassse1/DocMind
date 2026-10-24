@@ -1,7 +1,7 @@
 services:
   postgres:
-    # pgvector image so Phase 4 needs no image swap; the extension is NOT enabled yet
-    # (that will be an explicit Alembic migration: CREATE EXTENSION vector).
+    # pgvector image; the extension itself is enabled by an Alembic migration
+    # (revision 76cdab7f68eb: CREATE EXTENSION IF NOT EXISTS vector).
     image: pgvector/pgvector:pg17
     container_name: docmind-postgres
     environment:
