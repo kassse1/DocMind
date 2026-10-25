@@ -1,0 +1,4000 @@
+{
+  "generated_at": "2026-10-25T20:28:17+00:00",
+  "dataset": {
+    "name": "docmind-search-eval",
+    "version": "1.0.0",
+    "sha256": "85462013487b969460253825ae19bb190d58757bd205fbdfd2f9961c2c4a506f",
+    "documents": 9,
+    "passages": 43,
+    "queries": 36
+  },
+  "settings": {
+    "k": [
+      1,
+      3,
+      5
+    ],
+    "retrieval_depth": 5,
+    "metric": "cosine",
+    "relevance": "binary",
+    "precision_denominator": "k",
+    "mrr_cutoff": 5,
+    "search_path": "app.services.search.search (same as POST /api/v1/search)",
+    "query_scope": "documents of the query's language (document_ids filter)",
+    "chunk_size_tokens": 256,
+    "chunk_overlap_tokens": 32,
+    "hf_hub_offline": true
+  },
+  "environment": {
+    "python": "3.13.14",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "machine": "AMD64",
+    "libraries": {
+      "torch": "2.14.1",
+      "transformers": "5.20.2",
+      "sentence-transformers": "6.2.0",
+      "huggingface-hub": "2.3.0",
+      "pgvector": "0.5.1"
+    },
+    "postgresql": "17.11 (Debian 17.11-1.pgdg12+2)",
+    "pgvector": "0.8.7"
+  },
+  "models": [
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "dimension": 384,
+      "query_prefix": "query: ",
+      "passage_prefix": "passage: ",
+      "load_seconds": 6.51,
+      "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+      "device": "cpu",
+      "status": "ok",
+      "metrics": {
+        "overall": {
+          "recall@1": 0.9027777777777778,
+          "precision@1": 0.9444444444444444,
+          "recall@3": 0.9444444444444444,
+          "precision@3": 0.3333333333333333,
+          "recall@5": 0.9583333333333334,
+          "precision@5": 0.20555555555555557,
+          "mrr": 0.9583333333333334
+        },
+        "by_language": {
+          "en": {
+            "recall@1": 0.9583333333333334,
+            "precision@1": 1.0,
+            "recall@3": 0.9583333333333334,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 0.9583333333333334,
+            "precision@5": 0.20000000000000004,
+            "mrr": 1.0
+          },
+          "kk": {
+            "recall@1": 0.7916666666666666,
+            "precision@1": 0.8333333333333334,
+            "recall@3": 0.9166666666666666,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 0.9166666666666666,
+            "precision@5": 0.20000000000000004,
+            "mrr": 0.875
+          },
+          "ru": {
+            "recall@1": 0.9583333333333334,
+            "precision@1": 1.0,
+            "recall@3": 0.9583333333333334,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.21666666666666667,
+            "mrr": 1.0
+          }
+        },
+        "macro_language": {
+          "recall@1": 0.9027777777777778,
+          "precision@1": 0.9444444444444445,
+          "recall@3": 0.9444444444444445,
+          "precision@3": 0.3333333333333333,
+          "recall@5": 0.9583333333333334,
+          "precision@5": 0.20555555555555557,
+          "mrr": 0.9583333333333334
+        }
+      },
+      "query_counts": {
+        "en": 12,
+        "kk": 12,
+        "ru": 12
+      },
+      "timing": {
+        "note": "Single run, indicative only; not a benchmark.",
+        "corpus_embed_and_insert_seconds": 0.338,
+        "search_ms_median": 13.62,
+        "search_ms_max": 28.79,
+        "search_ms_n": 36
+      },
+      "queries": [
+        {
+          "id": "en-q01",
+          "language": "en",
+          "difficulty": "straightforward",
+          "query": "How many days do I have to pay an invoice?",
+          "relevant": [
+            "en-billing-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.899,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.873,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.8509,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.8486,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.8431,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q02",
+          "language": "en",
+          "difficulty": "paraphrase",
+          "query": "What happens if we settle the bill late?",
+          "relevant": [
+            "en-billing-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.8309,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.8169,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-03",
+              "similarity": 0.8105,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.8036,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-05",
+              "similarity": 0.8012,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q03",
+          "language": "en",
+          "difficulty": "straightforward",
+          "query": "Can I pay with cash?",
+          "relevant": [
+            "en-billing-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.9072,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.814,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.811,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.8029,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.8018,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q04",
+          "language": "en",
+          "difficulty": "challenging",
+          "query": "I paid twice by mistake, when will I get my money back?",
+          "relevant": [
+            "en-billing-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.8539,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.8435,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.8352,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.8297,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.8284,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q05",
+          "language": "en",
+          "difficulty": "straightforward",
+          "query": "How long does standard delivery take?",
+          "relevant": [
+            "en-delivery-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-delivery-01",
+              "similarity": 0.8554,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.8466,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.8295,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.8148,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.8089,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q06",
+          "language": "en",
+          "difficulty": "paraphrase",
+          "query": "Is there an extra charge for shipping to another town?",
+          "relevant": [
+            "en-delivery-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.8368,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.8137,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.8072,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-05",
+              "similarity": 0.8041,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.8024,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q07",
+          "language": "en",
+          "difficulty": "challenging",
+          "query": "The box arrived crushed, what should I do?",
+          "relevant": [
+            "en-delivery-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.8209,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.8186,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.809,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.799,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-05",
+              "similarity": 0.7956,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q08",
+          "language": "en",
+          "difficulty": "paraphrase",
+          "query": "Who covers the postage when I send something back?",
+          "relevant": [
+            "en-delivery-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.7985,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.7845,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.7827,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-05",
+              "similarity": 0.7803,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.7761,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q09",
+          "language": "en",
+          "difficulty": "straightforward",
+          "query": "How much paid vacation do full-time staff get?",
+          "relevant": [
+            "en-leave-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-leave-01",
+              "similarity": 0.857,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-leave-05",
+              "similarity": 0.8331,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.7888,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.7853,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.7793,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q10",
+          "language": "en",
+          "difficulty": "challenging",
+          "query": "Can I keep my unused holidays for next year?",
+          "relevant": [
+            "en-leave-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.8885,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.8179,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-03",
+              "similarity": 0.8065,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-05",
+              "similarity": 0.8064,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.8052,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q11",
+          "language": "en",
+          "difficulty": "paraphrase",
+          "query": "When do I need a doctor's note for being ill?",
+          "relevant": [
+            "en-leave-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-leave-03",
+              "similarity": 0.8504,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-leave-04",
+              "similarity": 0.8127,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.8098,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.8089,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.8036,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q12",
+          "language": "en",
+          "difficulty": "challenging",
+          "query": "What extra fees can be added to the amount I pay?",
+          "relevant": [
+            "en-billing-02",
+            "en-delivery-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.8219,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.8216,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.7916,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.7835,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.7825,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.5,
+            "precision@1": 1.0,
+            "recall@3": 0.5,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 0.5,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q01",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Когда нужно оплатить счёт?",
+          "relevant": [
+            "ru-payment-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.8715,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.8572,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-03",
+              "similarity": 0.8397,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-02",
+              "similarity": 0.8237,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-02",
+              "similarity": 0.8162,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q02",
+          "language": "ru",
+          "difficulty": "paraphrase",
+          "query": "В какой срок клиент должен внести плату за услуги?",
+          "relevant": [
+            "ru-payment-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.8612,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.8345,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.832,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-02",
+              "similarity": 0.8249,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-03",
+              "similarity": 0.8166,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q03",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Какой штраф за просрочку платежа?",
+          "relevant": [
+            "ru-payment-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-02",
+              "similarity": 0.8245,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.7896,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.7852,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-02",
+              "similarity": 0.7841,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.7814,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q04",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Какими способами можно оплатить?",
+          "relevant": [
+            "ru-payment-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-03",
+              "similarity": 0.8627,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.8313,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.8166,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-02",
+              "similarity": 0.8051,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-02",
+              "similarity": 0.8028,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q05",
+          "language": "ru",
+          "difficulty": "challenging",
+          "query": "Я случайно заплатил два раза, что будет с деньгами?",
+          "relevant": [
+            "ru-payment-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.8186,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.7837,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.7772,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-02",
+              "similarity": 0.7751,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-03",
+              "similarity": 0.7707,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q06",
+          "language": "ru",
+          "difficulty": "paraphrase",
+          "query": "Нужно ли каждый год заново подписывать договор?",
+          "relevant": [
+            "ru-contract-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-contract-01",
+              "similarity": 0.8458,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-02",
+              "similarity": 0.8315,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.8219,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.8115,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.8073,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q07",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Во сколько привозят воду?",
+          "relevant": [
+            "ru-delivery-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-delivery-01",
+              "similarity": 0.8355,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-05",
+              "similarity": 0.8332,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.8014,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.7975,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-02",
+              "similarity": 0.7842,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q08",
+          "language": "ru",
+          "difficulty": "paraphrase",
+          "query": "Если заказать вечером, когда доставят?",
+          "relevant": [
+            "ru-delivery-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-delivery-02",
+              "similarity": 0.8697,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-delivery-01",
+              "similarity": 0.8389,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.821,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.8147,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.8093,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q09",
+          "language": "ru",
+          "difficulty": "challenging",
+          "query": "Что будет, если я разобью бутыль?",
+          "relevant": [
+            "ru-delivery-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.8361,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.8228,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-05",
+              "similarity": 0.7938,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.7892,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.781,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q10",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Как расторгнуть договор?",
+          "relevant": [
+            "ru-contract-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-contract-02",
+              "similarity": 0.8595,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.8369,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-01",
+              "similarity": 0.8204,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-05",
+              "similarity": 0.8138,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.806,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q11",
+          "language": "ru",
+          "difficulty": "challenging",
+          "query": "Могут ли перестать обслуживать за долги?",
+          "relevant": [
+            "ru-contract-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.8332,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-02",
+              "similarity": 0.8053,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.7968,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.7936,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-05",
+              "similarity": 0.7925,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q12",
+          "language": "ru",
+          "difficulty": "challenging",
+          "query": "Сколько придётся заплатить за доставку и за тару?",
+          "relevant": [
+            "ru-delivery-03",
+            "ru-delivery-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.8308,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.8253,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-02",
+              "similarity": 0.8192,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-05",
+              "similarity": 0.8096,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.8076,
+              "relevant": true
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.5,
+            "precision@1": 1.0,
+            "recall@3": 0.5,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.4,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q01",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Оқу ақысын қашан төлеу керек?",
+          "relevant": [
+            "kk-tuition-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.8508,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.8379,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.8348,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.8277,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.8228,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q02",
+          "language": "kk",
+          "difficulty": "paraphrase",
+          "query": "Семестр ақысын төлеудің соңғы мерзімі қандай?",
+          "relevant": [
+            "kk-tuition-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.817,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.8092,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-01",
+              "similarity": 0.8038,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.8013,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-02",
+              "similarity": 0.798,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q03",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Оқу ақысын кешіктірсем не болады?",
+          "relevant": [
+            "kk-tuition-02"
+          ],
+          "first_relevant_rank": null,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.823,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.8207,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.8072,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.8066,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-03",
+              "similarity": 0.8028,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.0,
+            "precision@1": 0.0,
+            "recall@3": 0.0,
+            "precision@3": 0.0,
+            "recall@5": 0.0,
+            "precision@5": 0.0,
+            "mrr": 0.0
+          }
+        },
+        {
+          "id": "kk-q04",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Оқу ақысын қалай төлеуге болады?",
+          "relevant": [
+            "kk-tuition-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.8484,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.8409,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.8265,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.8127,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.8116,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q05",
+          "language": "kk",
+          "difficulty": "paraphrase",
+          "query": "Жақсы оқитын студенттерге жеңілдік бар ма?",
+          "relevant": [
+            "kk-tuition-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.8473,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.8006,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.7939,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.7897,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-02",
+              "similarity": 0.7849,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q06",
+          "language": "kk",
+          "difficulty": "challenging",
+          "query": "Оқуды тастасам, ақшамды қайтарып ала аламын ба?",
+          "relevant": [
+            "kk-tuition-05"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.8174,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.8122,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.8034,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.8013,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.8008,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q07",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Жатақханада тұру қанша тұрады?",
+          "relevant": [
+            "kk-dorm-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-dorm-01",
+              "similarity": 0.8344,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-dorm-03",
+              "similarity": 0.8211,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-02",
+              "similarity": 0.8151,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.7927,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.7852,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q08",
+          "language": "kk",
+          "difficulty": "paraphrase",
+          "query": "Жатақхана түнде нешеде жабылады?",
+          "relevant": [
+            "kk-dorm-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-dorm-02",
+              "similarity": 0.8699,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-dorm-03",
+              "similarity": 0.8181,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.8141,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-01",
+              "similarity": 0.7999,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-05",
+              "similarity": 0.7875,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q09",
+          "language": "kk",
+          "difficulty": "paraphrase",
+          "query": "Бөлмеде тамақ пісіруге бола ма?",
+          "relevant": [
+            "kk-dorm-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-dorm-03",
+              "similarity": 0.8638,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-dorm-02",
+              "similarity": 0.792,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-01",
+              "similarity": 0.7912,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-04",
+              "similarity": 0.7836,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.7815,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q10",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Кітапхана сенбіде жұмыс істей ме?",
+          "relevant": [
+            "kk-library-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.856,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-dorm-02",
+              "similarity": 0.7918,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-03",
+              "similarity": 0.7908,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-05",
+              "similarity": 0.7902,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-03",
+              "similarity": 0.7897,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q11",
+          "language": "kk",
+          "difficulty": "challenging",
+          "query": "Кітапты жоғалтып алсам, не істеуім керек?",
+          "relevant": [
+            "kk-library-04"
+          ],
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.8021,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.7974,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-library-03",
+              "similarity": 0.796,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.7949,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-05",
+              "similarity": 0.7942,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.0,
+            "precision@1": 0.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 0.5
+          }
+        },
+        {
+          "id": "kk-q12",
+          "language": "kk",
+          "difficulty": "challenging",
+          "query": "Кітапты кешіктіріп қайтарсам немесе жоғалтсам, қандай жаза бар?",
+          "relevant": [
+            "kk-library-03",
+            "kk-library-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.8408,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-library-03",
+              "similarity": 0.8328,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.8308,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.8267,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.8062,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.5,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.6666666666666666,
+            "recall@5": 1.0,
+            "precision@5": 0.4,
+            "mrr": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "dimension": 1024,
+      "query_prefix": "",
+      "passage_prefix": "",
+      "load_seconds": 2.0,
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "device": "cpu",
+      "status": "ok",
+      "metrics": {
+        "overall": {
+          "recall@1": 0.9305555555555556,
+          "precision@1": 0.9722222222222222,
+          "recall@3": 1.0,
+          "precision@3": 0.3611111111111111,
+          "recall@5": 1.0,
+          "precision@5": 0.21666666666666667,
+          "mrr": 0.9861111111111112
+        },
+        "by_language": {
+          "en": {
+            "recall@1": 0.9583333333333334,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3611111111111111,
+            "recall@5": 1.0,
+            "precision@5": 0.21666666666666667,
+            "mrr": 1.0
+          },
+          "kk": {
+            "recall@1": 0.875,
+            "precision@1": 0.9166666666666666,
+            "recall@3": 1.0,
+            "precision@3": 0.3611111111111111,
+            "recall@5": 1.0,
+            "precision@5": 0.21666666666666667,
+            "mrr": 0.9583333333333334
+          },
+          "ru": {
+            "recall@1": 0.9583333333333334,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3611111111111111,
+            "recall@5": 1.0,
+            "precision@5": 0.21666666666666667,
+            "mrr": 1.0
+          }
+        },
+        "macro_language": {
+          "recall@1": 0.9305555555555557,
+          "precision@1": 0.9722222222222222,
+          "recall@3": 1.0,
+          "precision@3": 0.3611111111111111,
+          "recall@5": 1.0,
+          "precision@5": 0.21666666666666667,
+          "mrr": 0.9861111111111112
+        }
+      },
+      "query_counts": {
+        "en": 12,
+        "kk": 12,
+        "ru": 12
+      },
+      "timing": {
+        "note": "Single run, indicative only; not a benchmark.",
+        "corpus_embed_and_insert_seconds": 2.569,
+        "search_ms_median": 87.85,
+        "search_ms_max": 136.02,
+        "search_ms_n": 36
+      },
+      "queries": [
+        {
+          "id": "en-q01",
+          "language": "en",
+          "difficulty": "straightforward",
+          "query": "How many days do I have to pay an invoice?",
+          "relevant": [
+            "en-billing-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.7902,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.7006,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.6487,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.6223,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-05",
+              "similarity": 0.5907,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q02",
+          "language": "en",
+          "difficulty": "paraphrase",
+          "query": "What happens if we settle the bill late?",
+          "relevant": [
+            "en-billing-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.6508,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.5444,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-05",
+              "similarity": 0.5391,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.533,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.5208,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q03",
+          "language": "en",
+          "difficulty": "straightforward",
+          "query": "Can I pay with cash?",
+          "relevant": [
+            "en-billing-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.7399,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.5644,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.5267,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.5144,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.4999,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q04",
+          "language": "en",
+          "difficulty": "challenging",
+          "query": "I paid twice by mistake, when will I get my money back?",
+          "relevant": [
+            "en-billing-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.6634,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.5918,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.5811,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.5637,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.5383,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q05",
+          "language": "en",
+          "difficulty": "straightforward",
+          "query": "How long does standard delivery take?",
+          "relevant": [
+            "en-delivery-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-delivery-01",
+              "similarity": 0.7394,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.6908,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.5637,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-05",
+              "similarity": 0.5612,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.5569,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q06",
+          "language": "en",
+          "difficulty": "paraphrase",
+          "query": "Is there an extra charge for shipping to another town?",
+          "relevant": [
+            "en-delivery-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.6799,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-01",
+              "similarity": 0.5382,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.5252,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.5116,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.4673,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q07",
+          "language": "en",
+          "difficulty": "challenging",
+          "query": "The box arrived crushed, what should I do?",
+          "relevant": [
+            "en-delivery-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.6223,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.5097,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-05",
+              "similarity": 0.4612,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.4478,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-01",
+              "similarity": 0.4423,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q08",
+          "language": "en",
+          "difficulty": "paraphrase",
+          "query": "Who covers the postage when I send something back?",
+          "relevant": [
+            "en-delivery-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.5792,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.5155,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.5154,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.4784,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-01",
+              "similarity": 0.4652,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q09",
+          "language": "en",
+          "difficulty": "straightforward",
+          "query": "How much paid vacation do full-time staff get?",
+          "relevant": [
+            "en-leave-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-leave-01",
+              "similarity": 0.6808,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-leave-05",
+              "similarity": 0.6306,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.5268,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-04",
+              "similarity": 0.4778,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.4545,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q10",
+          "language": "en",
+          "difficulty": "challenging",
+          "query": "Can I keep my unused holidays for next year?",
+          "relevant": [
+            "en-leave-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-leave-02",
+              "similarity": 0.6978,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-leave-05",
+              "similarity": 0.5413,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-04",
+              "similarity": 0.5067,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-01",
+              "similarity": 0.4994,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-leave-04",
+              "similarity": 0.495,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q11",
+          "language": "en",
+          "difficulty": "paraphrase",
+          "query": "When do I need a doctor's note for being ill?",
+          "relevant": [
+            "en-leave-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-leave-03",
+              "similarity": 0.6864,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-leave-04",
+              "similarity": 0.5018,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.4567,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-03",
+              "similarity": 0.4527,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.4104,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "en-q12",
+          "language": "en",
+          "difficulty": "challenging",
+          "query": "What extra fees can be added to the amount I pay?",
+          "relevant": [
+            "en-billing-02",
+            "en-delivery-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "en-billing-02",
+              "similarity": 0.6734,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-delivery-02",
+              "similarity": 0.6219,
+              "relevant": true
+            },
+            {
+              "passage_id": "en-billing-01",
+              "similarity": 0.5483,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-04",
+              "similarity": 0.5404,
+              "relevant": false
+            },
+            {
+              "passage_id": "en-billing-03",
+              "similarity": 0.5397,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.5,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.6666666666666666,
+            "recall@5": 1.0,
+            "precision@5": 0.4,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q01",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Когда нужно оплатить счёт?",
+          "relevant": [
+            "ru-payment-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.7586,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.6483,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-02",
+              "similarity": 0.6018,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-03",
+              "similarity": 0.601,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.588,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q02",
+          "language": "ru",
+          "difficulty": "paraphrase",
+          "query": "В какой срок клиент должен внести плату за услуги?",
+          "relevant": [
+            "ru-payment-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.7303,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.6355,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.6233,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-02",
+              "similarity": 0.595,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-02",
+              "similarity": 0.581,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q03",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Какой штраф за просрочку платежа?",
+          "relevant": [
+            "ru-payment-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-02",
+              "similarity": 0.6651,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.5939,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.5679,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.5426,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.5121,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q04",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Какими способами можно оплатить?",
+          "relevant": [
+            "ru-payment-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-03",
+              "similarity": 0.7029,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.5834,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.5573,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.5377,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-02",
+              "similarity": 0.5325,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q05",
+          "language": "ru",
+          "difficulty": "challenging",
+          "query": "Я случайно заплатил два раза, что будет с деньгами?",
+          "relevant": [
+            "ru-payment-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.7017,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.545,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.5149,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.5108,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.5105,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q06",
+          "language": "ru",
+          "difficulty": "paraphrase",
+          "query": "Нужно ли каждый год заново подписывать договор?",
+          "relevant": [
+            "ru-contract-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-contract-01",
+              "similarity": 0.6774,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-02",
+              "similarity": 0.4838,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.4735,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-04",
+              "similarity": 0.4618,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.4596,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q07",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Во сколько привозят воду?",
+          "relevant": [
+            "ru-delivery-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-delivery-01",
+              "similarity": 0.6926,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-05",
+              "similarity": 0.5603,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.5588,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-02",
+              "similarity": 0.5486,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.523,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q08",
+          "language": "ru",
+          "difficulty": "paraphrase",
+          "query": "Если заказать вечером, когда доставят?",
+          "relevant": [
+            "ru-delivery-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-delivery-02",
+              "similarity": 0.7278,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-delivery-01",
+              "similarity": 0.6565,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.5183,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.5114,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.5069,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q09",
+          "language": "ru",
+          "difficulty": "challenging",
+          "query": "Что будет, если я разобью бутыль?",
+          "relevant": [
+            "ru-delivery-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.5634,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.56,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.4827,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-05",
+              "similarity": 0.452,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.3761,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q10",
+          "language": "ru",
+          "difficulty": "straightforward",
+          "query": "Как расторгнуть договор?",
+          "relevant": [
+            "ru-contract-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-contract-02",
+              "similarity": 0.7075,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.6403,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-05",
+              "similarity": 0.5715,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.5646,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-contract-01",
+              "similarity": 0.5425,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q11",
+          "language": "ru",
+          "difficulty": "challenging",
+          "query": "Могут ли перестать обслуживать за долги?",
+          "relevant": [
+            "ru-contract-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-contract-04",
+              "similarity": 0.7399,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-contract-03",
+              "similarity": 0.5839,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-02",
+              "similarity": 0.5088,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.506,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.4824,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "ru-q12",
+          "language": "ru",
+          "difficulty": "challenging",
+          "query": "Сколько придётся заплатить за доставку и за тару?",
+          "relevant": [
+            "ru-delivery-03",
+            "ru-delivery-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "ru-delivery-04",
+              "similarity": 0.6576,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-delivery-03",
+              "similarity": 0.5868,
+              "relevant": true
+            },
+            {
+              "passage_id": "ru-payment-05",
+              "similarity": 0.5745,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-delivery-01",
+              "similarity": 0.527,
+              "relevant": false
+            },
+            {
+              "passage_id": "ru-payment-01",
+              "similarity": 0.5262,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.5,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.6666666666666666,
+            "recall@5": 1.0,
+            "precision@5": 0.4,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q01",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Оқу ақысын қашан төлеу керек?",
+          "relevant": [
+            "kk-tuition-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.7812,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.6727,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.6113,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-02",
+              "similarity": 0.5979,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.5696,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q02",
+          "language": "kk",
+          "difficulty": "paraphrase",
+          "query": "Семестр ақысын төлеудің соңғы мерзімі қандай?",
+          "relevant": [
+            "kk-tuition-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.6997,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-02",
+              "similarity": 0.5959,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.5512,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-01",
+              "similarity": 0.5294,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.5267,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q03",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Оқу ақысын кешіктірсем не болады?",
+          "relevant": [
+            "kk-tuition-02"
+          ],
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.6497,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-02",
+              "similarity": 0.6369,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.607,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-03",
+              "similarity": 0.5967,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.5934,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.0,
+            "precision@1": 0.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 0.5
+          }
+        },
+        {
+          "id": "kk-q04",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Оқу ақысын қалай төлеуге болады?",
+          "relevant": [
+            "kk-tuition-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.7721,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.706,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.5857,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.5767,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.5687,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q05",
+          "language": "kk",
+          "difficulty": "paraphrase",
+          "query": "Жақсы оқитын студенттерге жеңілдік бар ма?",
+          "relevant": [
+            "kk-tuition-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.7253,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-02",
+              "similarity": 0.5549,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.538,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.5258,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.5249,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q06",
+          "language": "kk",
+          "difficulty": "challenging",
+          "query": "Оқуды тастасам, ақшамды қайтарып ала аламын ба?",
+          "relevant": [
+            "kk-tuition-05"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.682,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.6029,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-02",
+              "similarity": 0.5932,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.585,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-04",
+              "similarity": 0.5772,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q07",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Жатақханада тұру қанша тұрады?",
+          "relevant": [
+            "kk-dorm-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-dorm-01",
+              "similarity": 0.7619,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-dorm-02",
+              "similarity": 0.5551,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-04",
+              "similarity": 0.5215,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-01",
+              "similarity": 0.5005,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-03",
+              "similarity": 0.4915,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q08",
+          "language": "kk",
+          "difficulty": "paraphrase",
+          "query": "Жатақхана түнде нешеде жабылады?",
+          "relevant": [
+            "kk-dorm-02"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-dorm-02",
+              "similarity": 0.7816,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-dorm-04",
+              "similarity": 0.536,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-01",
+              "similarity": 0.4986,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.4735,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-03",
+              "similarity": 0.4501,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q09",
+          "language": "kk",
+          "difficulty": "paraphrase",
+          "query": "Бөлмеде тамақ пісіруге бола ма?",
+          "relevant": [
+            "kk-dorm-03"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-dorm-03",
+              "similarity": 0.7256,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-dorm-02",
+              "similarity": 0.4122,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-02",
+              "similarity": 0.4015,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.4003,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-dorm-04",
+              "similarity": 0.3981,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q10",
+          "language": "kk",
+          "difficulty": "straightforward",
+          "query": "Кітапхана сенбіде жұмыс істей ме?",
+          "relevant": [
+            "kk-library-01"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.7358,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.5173,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-03",
+              "similarity": 0.5042,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-05",
+              "similarity": 0.4997,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.4829,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q11",
+          "language": "kk",
+          "difficulty": "challenging",
+          "query": "Кітапты жоғалтып алсам, не істеуім керек?",
+          "relevant": [
+            "kk-library-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.6898,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.5887,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-03",
+              "similarity": 0.5678,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-05",
+              "similarity": 0.5226,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-01",
+              "similarity": 0.4739,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 1.0,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.3333333333333333,
+            "recall@5": 1.0,
+            "precision@5": 0.2,
+            "mrr": 1.0
+          }
+        },
+        {
+          "id": "kk-q12",
+          "language": "kk",
+          "difficulty": "challenging",
+          "query": "Кітапты кешіктіріп қайтарсам немесе жоғалтсам, қандай жаза бар?",
+          "relevant": [
+            "kk-library-03",
+            "kk-library-04"
+          ],
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "passage_id": "kk-library-03",
+              "similarity": 0.729,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-library-04",
+              "similarity": 0.6732,
+              "relevant": true
+            },
+            {
+              "passage_id": "kk-library-02",
+              "similarity": 0.6058,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-library-05",
+              "similarity": 0.5357,
+              "relevant": false
+            },
+            {
+              "passage_id": "kk-tuition-05",
+              "similarity": 0.4765,
+              "relevant": false
+            }
+          ],
+          "metrics": {
+            "recall@1": 0.5,
+            "precision@1": 1.0,
+            "recall@3": 1.0,
+            "precision@3": 0.6666666666666666,
+            "recall@5": 1.0,
+            "precision@5": 0.4,
+            "mrr": 1.0
+          }
+        }
+      ]
+    }
+  ],
+  "comparison": [
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "overall",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.9028
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "overall",
+      "metric": "recall",
+      "k": 3,
+      "score": 0.9444
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "overall",
+      "metric": "recall",
+      "k": 5,
+      "score": 0.9583
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "overall",
+      "metric": "precision",
+      "k": 1,
+      "score": 0.9444
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "overall",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3333
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "overall",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2056
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "overall",
+      "metric": "mrr",
+      "k": 5,
+      "score": 0.9583
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "en",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.9583
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "en",
+      "metric": "recall",
+      "k": 3,
+      "score": 0.9583
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "en",
+      "metric": "recall",
+      "k": 5,
+      "score": 0.9583
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "en",
+      "metric": "precision",
+      "k": 1,
+      "score": 1.0
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "en",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3333
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "en",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "en",
+      "metric": "mrr",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "kk",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.7917
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "kk",
+      "metric": "recall",
+      "k": 3,
+      "score": 0.9167
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "kk",
+      "metric": "recall",
+      "k": 5,
+      "score": 0.9167
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "kk",
+      "metric": "precision",
+      "k": 1,
+      "score": 0.8333
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "kk",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3333
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "kk",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "kk",
+      "metric": "mrr",
+      "k": 5,
+      "score": 0.875
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "ru",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.9583
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "ru",
+      "metric": "recall",
+      "k": 3,
+      "score": 0.9583
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "ru",
+      "metric": "recall",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "ru",
+      "metric": "precision",
+      "k": 1,
+      "score": 1.0
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "ru",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3333
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "ru",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2167
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "ru",
+      "metric": "mrr",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "macro_language",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.9028
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "macro_language",
+      "metric": "recall",
+      "k": 3,
+      "score": 0.9444
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "macro_language",
+      "metric": "recall",
+      "k": 5,
+      "score": 0.9583
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "macro_language",
+      "metric": "precision",
+      "k": 1,
+      "score": 0.9444
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "macro_language",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3333
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "macro_language",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2056
+    },
+    {
+      "model": "intfloat/multilingual-e5-small",
+      "scope": "macro_language",
+      "metric": "mrr",
+      "k": 5,
+      "score": 0.9583
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "overall",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.9306
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "overall",
+      "metric": "recall",
+      "k": 3,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "overall",
+      "metric": "recall",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "overall",
+      "metric": "precision",
+      "k": 1,
+      "score": 0.9722
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "overall",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3611
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "overall",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2167
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "overall",
+      "metric": "mrr",
+      "k": 5,
+      "score": 0.9861
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "en",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.9583
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "en",
+      "metric": "recall",
+      "k": 3,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "en",
+      "metric": "recall",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "en",
+      "metric": "precision",
+      "k": 1,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "en",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3611
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "en",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2167
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "en",
+      "metric": "mrr",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "kk",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.875
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "kk",
+      "metric": "recall",
+      "k": 3,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "kk",
+      "metric": "recall",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "kk",
+      "metric": "precision",
+      "k": 1,
+      "score": 0.9167
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "kk",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3611
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "kk",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2167
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "kk",
+      "metric": "mrr",
+      "k": 5,
+      "score": 0.9583
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "ru",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.9583
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "ru",
+      "metric": "recall",
+      "k": 3,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "ru",
+      "metric": "recall",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "ru",
+      "metric": "precision",
+      "k": 1,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "ru",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3611
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "ru",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2167
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "ru",
+      "metric": "mrr",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "macro_language",
+      "metric": "recall",
+      "k": 1,
+      "score": 0.9306
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "macro_language",
+      "metric": "recall",
+      "k": 3,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "macro_language",
+      "metric": "recall",
+      "k": 5,
+      "score": 1.0
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "macro_language",
+      "metric": "precision",
+      "k": 1,
+      "score": 0.9722
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "macro_language",
+      "metric": "precision",
+      "k": 3,
+      "score": 0.3611
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "macro_language",
+      "metric": "precision",
+      "k": 5,
+      "score": 0.2167
+    },
+    {
+      "model": "BAAI/bge-m3",
+      "scope": "macro_language",
+      "metric": "mrr",
+      "k": 5,
+      "score": 0.9861
+    }
+  ]
+}
