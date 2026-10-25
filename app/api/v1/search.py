@@ -7,12 +7,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_embedder
 from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
+from app.core.errors import DatabaseUnavailableRoute
 from app.embeddings.base import Embedder
 from app.models import User
 from app.schemas.search import SearchRequest, SearchResponse, SearchResult
 from app.services import search as search_service
 
-router = APIRouter(prefix="/search", tags=["search"])
+router = APIRouter(prefix="/search", tags=["search"], route_class=DatabaseUnavailableRoute)
 
 
 @router.post(

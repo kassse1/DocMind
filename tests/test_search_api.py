@@ -7,6 +7,8 @@ from typing import Any
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from app.api.deps import get_current_user
 from app.core.config import Settings, get_settings
@@ -175,3 +177,81 @@ def test_search_requires_authentication_in_prod(service_calls) -> None:
         response = client.post(URL, json={"query": "q"})
     assert response.status_code == 401
     assert service_calls == []
+
+
+def _secret_operational_error() -> OperationalError:
+    return OperationalError(
+        "SELECT ...", {}, Exception("connection to 10.0.0.5 failed for user=admin SECRETPW")
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [_secret_operational_error(), PoolTimeoutError("QueuePool limit reached")],
+    ids=["operational", "pool-timeout"],
+)
+def test_database_failure_in_service_is_503(api: TestClient, monkeypatch, caplog, error) -> None:
+    def failing_search(*_args: Any) -> list[ChunkHit]:
+        raise error
+
+    monkeypatch.setattr(search_service, "search", failing_search)
+
+    response = api.post(URL, json={"query": "SECRETQUERY"})
+
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "database_unavailable",
+        "message": "The database is unavailable. Try again later.",
+        "details": None,
+    }
+    for leaked in ("SECRETPW", "10.0.0.5", "SECRETQUERY", "QueuePool"):
+        assert leaked not in response.text
+        assert all(leaked not in r.getMessage() for r in caplog.records)
+
+
+def test_database_failure_in_user_dependency_is_503(app_and_client, service_calls) -> None:
+    app, api = app_and_client
+
+    def failing_user() -> User:
+        raise _secret_operational_error()
+
+    app.dependency_overrides[get_current_user] = failing_user
+
+    response = api.post(URL, json={"query": "q"})
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "database_unavailable"
+    assert service_calls == []
+
+
+def test_unexpected_error_stays_500(api: TestClient, monkeypatch) -> None:
+    def failing_search(*_args: Any) -> list[ChunkHit]:
+        raise RuntimeError("bug with SECRET detail")
+
+    monkeypatch.setattr(search_service, "search", failing_search)
+
+    response = api.post(URL, json={"query": "q"})
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "internal_error"
+    assert "SECRET" not in response.text
+
+
+def test_unreachable_database_is_503_without_leaking_credentials() -> None:
+    # Nothing listens on port 1: the connection is refused at once.
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        embedding_backend="fake",
+        database_url="postgresql+psycopg://docmind:SECRETPW@127.0.0.1:1/docmind_test",
+        db_connect_timeout_s=1,
+    )
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(URL, json={"query": "q"})
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "database_unavailable"
+    for leaked in ("SECRETPW", "127.0.0.1", "docmind", "psycopg"):
+        assert leaked not in response.text

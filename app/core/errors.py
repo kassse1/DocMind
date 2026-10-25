@@ -5,11 +5,15 @@ is rendered through this module so clients can rely on a single shape.
 """
 
 import logging
+from collections.abc import Callable, Coroutine
 from typing import Any
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
@@ -78,6 +82,33 @@ async def _validation_error_handler(_: Request, exc: RequestValidationError) -> 
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content=error_body("validation_error", "Request validation failed", details),
     )
+
+
+class DatabaseUnavailableRoute(APIRoute):
+    """Route class mapping transient database failures to 503 database_unavailable.
+
+    Connection refused/lost, statement timeout and pool exhaustion are reported as
+    "try again later" instead of a generic 500. It wraps the whole route, so failures in
+    dependencies (e.g. the current-user lookup) are covered too. Opt-in per router, so
+    existing endpoints keep their documented behavior.
+    """
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def route_handler(request: Request) -> Response:
+            try:
+                return await handler(request)
+            except (OperationalError, PoolTimeoutError) as exc:
+                # Class name only: driver messages can include host, port, user and SQL.
+                logger.warning("Database unavailable: %s", type(exc).__name__)
+                raise AppError(
+                    "database_unavailable",
+                    "The database is unavailable. Try again later.",
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                ) from None
+
+        return route_handler
 
 
 async def _unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:

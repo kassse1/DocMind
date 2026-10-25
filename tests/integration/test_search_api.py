@@ -206,3 +206,23 @@ def test_upload_index_then_search(settings, pg_engine, clean) -> None:
     assert [r["similarity"] for r in results] == sorted(
         (r["similarity"] for r in results), reverse=True
     )
+
+
+def test_statement_timeout_returns_503_instead_of_hanging(settings, pg_engine, clean) -> None:
+    _seed(pg_engine, ALICE, "a.txt", [vec(1.0)])
+    fast_fail = settings.model_copy(update={"search_timeout_ms": 200})
+
+    with _client(fast_fail, AxisEmbedder(EMBEDDING_DIMENSION)) as client:
+        # Another transaction blocks all reads of document_chunks until it ends.
+        with pg_engine.connect() as conn:
+            transaction = conn.begin()
+            conn.execute(text("LOCK TABLE document_chunks IN ACCESS EXCLUSIVE MODE"))
+            blocked = client.post(URL, json={"query": "a"})
+            transaction.rollback()
+        # The timeout is transaction-local: the pooled connection is healthy afterwards.
+        after = client.post(URL, json={"query": "a"})
+
+    assert blocked.status_code == 503
+    assert blocked.json()["error"]["code"] == "database_unavailable"
+    assert after.status_code == 200
+    assert len(after.json()["results"]) == 1
