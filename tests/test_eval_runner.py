@@ -7,6 +7,7 @@ from app.evaluation.run_search_eval import (
     comparison_rows,
     main,
     parse_ks,
+    parse_retrievals,
     render_markdown,
     require_test_database,
     resolve_models,
@@ -96,6 +97,15 @@ def test_comparison_rows_cover_every_scope_metric_and_k() -> None:
 
 def test_markdown_lists_failures_and_unavailable_models() -> None:
     text = render_markdown(_report())
-    assert "| intfloat/multilingual-e5-small | overall | 0.500 | 0.500 | 0.750 |" in text
+    assert "| intfloat/multilingual-e5-small | semantic | overall | 0.500 | 0.500 | 0.750 |" in text
     assert "unavailable: OSError: not cached" in text
     assert "en-q01: first relevant rank 2, top-1 en-x (0.9)" in text
+    assert "intfloat/multilingual-e5-small [semantic]: 1 queries" in text
+
+
+def test_parse_retrievals() -> None:
+    assert parse_retrievals("semantic") == ["semantic"]
+    assert parse_retrievals("hybrid, full_text,hybrid") == ["hybrid", "full_text"]
+    for bad in ["", "bm25", "semantic,vector"]:
+        with pytest.raises(ValueError):
+            parse_retrievals(bad)

@@ -46,13 +46,16 @@ from app.evaluation.dataset import DEFAULT_DATASET, LANGUAGES, EvalDataset, load
 from app.evaluation.metrics import aggregate, first_relevant_rank, query_metrics
 from app.ingestion.chunking import Chunker
 from app.models import EMBEDDING_DIMENSION, Base, Document, DocumentChunk, User
-from app.schemas.search import MAX_TOP_K, SearchRequest
+from app.schemas.search import MAX_TOP_K, HybridSearchRequest, SearchRequest
 from app.services import search as search_service
 
 logger = logging.getLogger("app.evaluation")
 
 TEST_DB_ENV = "DOCMIND_TEST_DATABASE_URL"
 MODEL_ALIASES = {"e5-small": "intfloat/multilingual-e5-small", "bge-m3": "BAAI/bge-m3"}
+# "semantic" is POST /api/v1/search (Phase 5); the others go through POST /search/hybrid.
+RETRIEVALS = ("semantic", "full_text", "hybrid")
+_HYBRID_MODES = {"full_text": "full_text", "hybrid": "hybrid"}
 # Fixed namespace: document UUIDs (and so the search tie-breaker) are the same every run.
 _NAMESPACE = uuid.UUID("5d0c7c1e-6a0e-4c1e-9f8a-2f4b8e6d1a00")
 _LIBRARIES = ("torch", "transformers", "sentence-transformers", "huggingface-hub", "pgvector")
@@ -87,6 +90,14 @@ def resolve_models(spec: str, current_model: str) -> list[str]:
     if not models:
         raise ValueError("No models given")
     return models
+
+
+def parse_retrievals(spec: str) -> list[str]:
+    retrievals = list(dict.fromkeys(part.strip() for part in spec.split(",") if part.strip()))
+    unknown = [r for r in retrievals if r not in RETRIEVALS]
+    if not retrievals or unknown:
+        raise ValueError(f"Retrieval methods must be among {', '.join(RETRIEVALS)}")
+    return retrievals
 
 
 def parse_ks(spec: str) -> list[int]:
@@ -192,13 +203,47 @@ def _populate(
     return owner
 
 
-def evaluate_model(
+def _run_query(
+    session: Session,
+    embedder: Embedder,
+    settings: Settings,
+    owner: User,
+    retrieval: str,
+    text_: str,
+    top_k: int,
+    document_ids: list[uuid.UUID] | None,
+) -> list[tuple[Any, dict[str, Any]]]:
+    """One query through the production service; returns (hit, per-hit details) pairs."""
+    if retrieval == "semantic":
+        request = SearchRequest(query=text_, top_k=top_k, document_ids=document_ids)
+        hits = search_service.search(session, embedder, settings, owner, request)
+        return [(h, {"similarity": round(h.similarity, 4)}) for h in hits]
+    hybrid_request = HybridSearchRequest(
+        query=text_, top_k=top_k, document_ids=document_ids, mode=_HYBRID_MODES[retrieval]
+    )
+    outcome = search_service.hybrid_search(session, embedder, settings, owner, hybrid_request)
+    return [
+        (
+            h,
+            {
+                "rrf_score": round(h.rrf_score, 6),
+                "vector_rank": h.vector_rank,
+                "full_text_rank": h.full_text_rank,
+            },
+        )
+        for h in outcome.hits
+    ]
+
+
+def evaluate_model_retrievals(
     engine: Engine,
     dataset: EvalDataset,
     embedder: Embedder,
     settings: Settings,
     ks: Sequence[int],
-) -> dict[str, Any]:
+    retrievals: Sequence[str] = ("semantic",),
+) -> dict[str, dict[str, Any]]:
+    """Embed the corpus once, then evaluate every retrieval method on it."""
     depth = max(ks)
     passage_by_key = {
         (document_uuid(doc.id), p.index): p.id for doc in dataset.documents for p in doc.passages
@@ -207,74 +252,88 @@ def evaluate_model(
         lang: [document_uuid(d.id) for d in dataset.documents if d.language == lang]
         for lang in LANGUAGES
     }
+    own_documents = {document_uuid(d.id) for d in dataset.documents}
+    results: dict[str, dict[str, Any]] = {}
     with isolated_schema(engine, embedder.dimension) as conn:
         session = Session(bind=conn)
         started = time.perf_counter()
         owner = _populate(session, dataset, embedder, settings)
         corpus_seconds = time.perf_counter() - started
 
-        queries, rows, latencies = [], [], []
-        for query in dataset.queries:
-            request = SearchRequest(
-                query=query.text, top_k=depth, document_ids=docs_by_language[query.language]
-            )
-            started = time.perf_counter()
-            hits = search_service.search(session, embedder, settings, owner, request)
-            latencies.append((time.perf_counter() - started) * 1000)
-            unknown = [h for h in hits if (h.document_id, h.chunk_index) not in passage_by_key]
-            if unknown:
-                raise EvaluationError(f"Query {query.id} returned chunks outside the dataset")
-            ranked = [passage_by_key[(h.document_id, h.chunk_index)] for h in hits]
-            metrics = query_metrics(ranked, query.relevant, ks)
-            rows.append((query.language, metrics))
-            queries.append(
-                {
-                    "id": query.id,
-                    "language": query.language,
-                    "difficulty": query.difficulty,
-                    "query": query.text,
-                    "relevant": sorted(query.relevant),
-                    "first_relevant_rank": first_relevant_rank(ranked, query.relevant),
-                    "retrieved": [
-                        {
-                            "passage_id": pid,
-                            "similarity": round(h.similarity, 4),
-                            "relevant": pid in query.relevant,
-                        }
-                        for pid, h in zip(ranked, hits, strict=True)
-                    ],
-                    "metrics": metrics,
-                }
-            )
+        for retrieval in retrievals:
+            queries, rows, latencies = [], [], []
+            for query in dataset.queries:
+                started = time.perf_counter()
+                pairs = _run_query(
+                    session, embedder, settings, owner, retrieval, query.text, depth,
+                    docs_by_language[query.language],
+                )
+                latencies.append((time.perf_counter() - started) * 1000)
+                hits = [h for h, _ in pairs]
+                if any((h.document_id, h.chunk_index) not in passage_by_key for h in hits):
+                    raise EvaluationError(f"Query {query.id} returned chunks outside the dataset")
+                ranked = [passage_by_key[(h.document_id, h.chunk_index)] for h in hits]
+                metrics = query_metrics(ranked, query.relevant, ks)
+                rows.append((query.language, metrics))
+                queries.append(
+                    {
+                        "id": query.id,
+                        "language": query.language,
+                        "difficulty": query.difficulty,
+                        "query": query.text,
+                        "relevant": sorted(query.relevant),
+                        "first_relevant_rank": first_relevant_rank(ranked, query.relevant),
+                        "retrieved": [
+                            {"passage_id": pid, **details, "relevant": pid in query.relevant}
+                            for pid, (_, details) in zip(ranked, pairs, strict=True)
+                        ],
+                        "metrics": metrics,
+                    }
+                )
 
-        # Owner isolation sanity check: unfiltered searches never return the stranger's copies.
-        own_documents = {document_uuid(d.id) for d in dataset.documents}
-        for query in dataset.queries:
-            hits = search_service.search(
-                session, embedder, settings, owner, SearchRequest(query=query.text, top_k=depth)
-            )
-            if any(h.document_id not in own_documents for h in hits):
-                raise EvaluationError("Search returned another user's document")
+            # Owner isolation sanity check: unfiltered searches never return the
+            # stranger's copies of the same passages.
+            for query in dataset.queries:
+                pairs = _run_query(
+                    session, embedder, settings, owner, retrieval, query.text, depth, None
+                )
+                if any(h.document_id not in own_documents for h, _ in pairs):
+                    raise EvaluationError("Search returned another user's document")
+
+            summary = aggregate(rows)
+            results[retrieval] = {
+                "status": "ok",
+                "retrieval": retrieval,
+                "metrics": {
+                    "overall": summary["overall"],
+                    "by_language": summary["by_group"],
+                    "macro_language": summary["macro"],
+                },
+                "query_counts": summary["query_counts"],
+                "timing": {
+                    "note": "Single run, indicative only; not a benchmark.",
+                    "corpus_embed_and_insert_seconds": round(corpus_seconds, 3),
+                    "search_ms_median": round(statistics.median(latencies), 2),
+                    "search_ms_max": round(max(latencies), 2),
+                    "search_ms_n": len(latencies),
+                },
+                "queries": queries,
+            }
         session.close()
+    return results
 
-    summary = aggregate(rows)
-    return {
-        "status": "ok",
-        "metrics": {
-            "overall": summary["overall"],
-            "by_language": summary["by_group"],
-            "macro_language": summary["macro"],
-        },
-        "query_counts": summary["query_counts"],
-        "timing": {
-            "note": "Single run, indicative only; not a benchmark.",
-            "corpus_embed_and_insert_seconds": round(corpus_seconds, 3),
-            "search_ms_median": round(statistics.median(latencies), 2),
-            "search_ms_max": round(max(latencies), 2),
-            "search_ms_n": len(latencies),
-        },
-        "queries": queries,
-    }
+
+def evaluate_model(
+    engine: Engine,
+    dataset: EvalDataset,
+    embedder: Embedder,
+    settings: Settings,
+    ks: Sequence[int],
+    retrieval: str = "semantic",
+) -> dict[str, Any]:
+    return evaluate_model_retrievals(engine, dataset, embedder, settings, ks, [retrieval])[
+        retrieval
+    ]
 
 
 def _library_versions() -> dict[str, str | None]:
@@ -329,6 +388,7 @@ def comparison_rows(models: list[dict[str, Any]], ks: Sequence[int]) -> list[dic
                 rows.append(
                     {
                         "model": model["model"],
+                        "retrieval": model.get("retrieval", "semantic"),
                         "scope": scope,
                         "metric": name,
                         "k": k,
@@ -346,6 +406,7 @@ def run(
     base_settings: Settings,
     *,
     offline: bool,
+    retrievals: Sequence[str] = ("semantic",),
 ) -> dict[str, Any]:
     results = []
     for model in models:
@@ -369,13 +430,15 @@ def run(
             # Report the blocker and keep going with the other models.
             logger.error("Model %s unavailable: %s", model, type(exc).__name__)
             entry |= {"status": "unavailable", "error": f"{type(exc).__name__}: {exc}"[:500]}
-            results.append(entry)
+            results.extend(entry | {"retrieval": retrieval} for retrieval in retrievals)
             continue
         entry["revision"] = _model_revision(model)
         entry["device"] = getattr(embedder, "device", None)
-        logger.info("Evaluating %s", model)
-        entry |= evaluate_model(engine, dataset, embedder, settings, ks)
-        results.append(entry)
+        logger.info("Evaluating %s (%s)", model, ", ".join(retrievals))
+        per_retrieval = evaluate_model_retrievals(
+            engine, dataset, embedder, settings, ks, retrievals
+        )
+        results.extend(entry | per_retrieval[retrieval] for retrieval in retrievals)
 
     return {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -394,7 +457,11 @@ def run(
             "relevance": "binary",
             "precision_denominator": "k",
             "mrr_cutoff": max(ks),
-            "search_path": "app.services.search.search (same as POST /api/v1/search)",
+            "retrievals": list(retrievals),
+            "search_path": "semantic: app.services.search.search (POST /api/v1/search); "
+            "full_text/hybrid: app.services.search.hybrid_search (POST /api/v1/search/hybrid)",
+            "hybrid_candidate_pool": base_settings.hybrid_candidate_pool,
+            "hybrid_rrf_k": base_settings.hybrid_rrf_k,
             "query_scope": "documents of the query's language (document_ids filter)",
             "chunk_size_tokens": base_settings.chunk_size_tokens,
             "chunk_overlap_tokens": base_settings.chunk_overlap_tokens,
@@ -414,13 +481,16 @@ def run(
 
 def render_markdown(report: dict[str, Any]) -> str:
     ks = report["settings"]["k"]
-    header = ["Model", "Scope"] + [f"R@{k}" for k in ks] + [f"P@{k}" for k in ks] + [
+    header = ["Model", "Retrieval", "Scope"] + [f"R@{k}" for k in ks] + [f"P@{k}" for k in ks] + [
         f"MRR@{max(ks)}"
     ]
     lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     for model in report["models"]:
         if model["status"] != "ok":
-            lines.append(f"| {model['model']} | unavailable: {model['error'][:80]} |")
+            lines.append(
+                f"| {model['model']} | {model.get('retrieval', 'semantic')} "
+                f"| unavailable: {model['error'][:80]} |"
+            )
             continue
         scopes = {"overall": model["metrics"]["overall"]} | model["metrics"]["by_language"] | {
             "macro (EN/RU/KK)": model["metrics"]["macro_language"]
@@ -429,16 +499,19 @@ def render_markdown(report: dict[str, Any]) -> str:
             cells = [f"{m[f'recall@{k}']:.3f}" for k in ks] + [
                 f"{m[f'precision@{k}']:.3f}" for k in ks
             ] + [f"{m['mrr']:.3f}"]
-            lines.append(f"| {model['model']} | {scope} | " + " | ".join(cells) + " |")
+            label = f"{model['model']} | {model.get('retrieval', 'semantic')}"
+            lines.append(f"| {label} | {scope} | " + " | ".join(cells) + " |")
     lines.append("")
     for model in report["models"]:
         if model["status"] != "ok":
             continue
         misses = [q for q in model["queries"] if q["first_relevant_rank"] != 1]
-        lines.append(f"{model['model']}: {len(misses)} queries with no relevant passage at rank 1")
+        label = f"{model['model']} [{model.get('retrieval', 'semantic')}]"
+        lines.append(f"{label}: {len(misses)} queries with no relevant passage at rank 1")
         for q in misses:
             top = q["retrieved"][0] if q["retrieved"] else None
-            got = f"{top['passage_id']} ({top['similarity']})" if top else "nothing"
+            score = top.get("similarity", top.get("rrf_score")) if top else None
+            got = f"{top['passage_id']} ({score})" if top else "nothing"
             lines.append(
                 f"  {q['id']}: first relevant rank {q['first_relevant_rank']}, top-1 {got}"
             )
@@ -451,6 +524,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--models", default="current", help="comma list: current, e5-small, bge-m3")
     parser.add_argument("--k", default="1,3,5", help="cutoffs, e.g. 1,3,5 (max 20)")
+    parser.add_argument(
+        "--retrieval",
+        default="semantic",
+        help="comma list: semantic (POST /search), full_text, hybrid (POST /search/hybrid)",
+    )
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--output", type=Path, default=None, help="JSON report path")
     parser.add_argument(
@@ -469,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         models = resolve_models(args.models, base_settings.embedding_model)
         ks = parse_ks(args.k)
+        retrievals = parse_retrievals(args.retrieval)
         url = os.environ.get(TEST_DB_ENV)
         if not url:
             raise EvaluationError(f"Set {TEST_DB_ENV} to a database whose name ends in '_test'")
@@ -484,12 +563,16 @@ def main(argv: list[str] | None = None) -> int:
     dataset = load_dataset(args.dataset)
     engine = create_engine(url)
     try:
-        report = run(engine, dataset, models, ks, base_settings, offline=args.offline)
+        report = run(
+            engine, dataset, models, ks, base_settings, offline=args.offline, retrievals=retrievals
+        )
     finally:
         engine.dispose()
         search_logger.setLevel(previous_level)
 
-    output = args.output or Path("docs/evaluation") / f"search_eval_v{dataset.version}.json"
+    # Semantic-only runs keep the Phase 5 file name; other runs never overwrite it.
+    suffix = "" if retrievals == ["semantic"] else "_" + "-".join(retrievals)
+    output = args.output or Path("docs/evaluation") / f"search_eval_v{dataset.version}{suffix}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(render_markdown(report))

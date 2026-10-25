@@ -10,7 +10,7 @@ from app.core.config import Settings
 from app.embeddings.fake import FakeEmbedder
 from app.evaluation import run_search_eval
 from app.evaluation.dataset import load_dataset
-from app.evaluation.run_search_eval import evaluate_model, run
+from app.evaluation.run_search_eval import evaluate_model, evaluate_model_retrievals, run
 from app.models import User
 
 pytestmark = pytest.mark.integration
@@ -130,6 +130,7 @@ def test_unavailable_model_is_reported_and_others_still_run(
         "passage_prefix": "",
         "status": "unavailable",
         "error": "OSError: model files are not in the local cache",
+        "retrieval": "semantic",
     }
     assert {r["model"] for r in report["comparison"]} == {"intfloat/multilingual-e5-small"}
     assert report["dataset"]["queries"] == 36
@@ -169,4 +170,28 @@ def test_isolated_schema_has_its_own_tables_and_vector_size(pg_engine: Engine) -
             {"e": "x@example.com"},
         )
         assert conn.scalar(select(func.count()).select_from(User)) == 1
+    assert _eval_schemas(pg_engine) == []
+
+
+def test_all_retrieval_methods_share_one_corpus_and_report_separately(
+    pg_engine: Engine, settings: Settings
+) -> None:
+    results = evaluate_model_retrievals(
+        pg_engine, DATASET, OracleEmbedder(), settings, KS, ["semantic", "full_text", "hybrid"]
+    )
+    assert list(results) == ["semantic", "full_text", "hybrid"]
+    assert results["semantic"]["metrics"]["overall"]["mrr"] == 1.0
+    # Same corpus and code path as a semantic-only run (Phase 5 numbers stay reproducible).
+    alone = evaluate_model(pg_engine, DATASET, OracleEmbedder(), settings, KS)
+    assert alone["queries"] == results["semantic"]["queries"]
+
+    full_text = results["full_text"]["queries"]
+    retrieved = [r for q in full_text for r in q["retrieved"]]
+    assert all("rrf_score" in r and r["vector_rank"] is None for r in retrieved)
+    hybrid = results["hybrid"]["queries"]
+    assert any(r["vector_rank"] and r["full_text_rank"] for q in hybrid for r in q["retrieved"])
+    for result in results.values():
+        assert result["query_counts"] == {"en": 12, "kk": 12, "ru": 12}
+        for query in result["queries"]:
+            assert {r["passage_id"][:2] for r in query["retrieved"]} <= {query["language"]}
     assert _eval_schemas(pg_engine) == []
