@@ -9,7 +9,9 @@ from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.database import create_db_engine, create_session_factory
 from app.core.errors import register_exception_handlers
+from app.embeddings.factory import create_embedder
 from app.ingestion.storage import FileStorage
+from app.models import EMBEDDING_DIMENSION
 
 
 @asynccontextmanager
@@ -34,6 +36,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = create_db_engine(settings)
     app.state.session_factory = create_session_factory(app.state.engine)
     app.state.storage = FileStorage(settings.storage_dir)
+    # One embedder per process, shared by all requests. The model itself loads lazily on
+    # the first search, so startup and the other endpoints never wait for it.
+    app.state.embedder = create_embedder(settings, EMBEDDING_DIMENSION)
 
     app.add_middleware(BodySizeLimitMiddleware, max_upload_bytes=settings.max_upload_bytes)
     register_exception_handlers(app)

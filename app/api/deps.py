@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
 from app.core.errors import AppError
+from app.embeddings.base import Embedder
 from app.ingestion.storage import FileStorage
 from app.models import User
 from app.services.users import get_or_create_user
@@ -15,6 +16,10 @@ from app.services.users import get_or_create_user
 
 def get_storage(request: Request) -> FileStorage:
     return request.app.state.storage
+
+
+def get_embedder(request: Request) -> Embedder:
+    return request.app.state.embedder
 
 
 def get_current_user(
