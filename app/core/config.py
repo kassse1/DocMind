@@ -65,6 +65,10 @@ class Settings(BaseSettings):
 
     # Semantic search: server-side statement timeout for the vector query.
     search_timeout_ms: int = Field(default=5000, ge=100)
+    # Hybrid search: candidates per branch before fusion (le = schemas.search.MAX_CANDIDATE_POOL)
+    # and the RRF constant k in 1 / (k + rank). 60 is the value from the original RRF paper.
+    hybrid_candidate_pool: int = Field(default=50, ge=1, le=100)
+    hybrid_rrf_k: int = Field(default=60, ge=1, le=1000)
 
     # Indexing worker (python -m app.worker).
     worker_poll_interval_s: float = Field(default=2.0, gt=0)

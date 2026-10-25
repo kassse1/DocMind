@@ -10,7 +10,14 @@ from app.core.database import get_db_session
 from app.core.errors import DatabaseUnavailableRoute
 from app.embeddings.base import Embedder
 from app.models import User
-from app.schemas.search import SearchRequest, SearchResponse, SearchResult
+from app.schemas.search import (
+    HybridSearchRequest,
+    HybridSearchResponse,
+    HybridSearchResult,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
+)
 from app.services import search as search_service
 
 router = APIRouter(prefix="/search", tags=["search"], route_class=DatabaseUnavailableRoute)
@@ -42,4 +49,38 @@ def search(
     return SearchResponse(
         results=[SearchResult(**asdict(hit)) for hit in hits],
         embedding_model=embedder.model_name,
+    )
+
+
+@router.post(
+    "/hybrid",
+    response_model=HybridSearchResponse,
+    responses={
+        401: {"description": "Authentication not configured (prod)"},
+        404: {"description": "A document in document_ids does not exist or is not yours"},
+        422: {"description": "Invalid query, top_k, candidate_pool, mode or filter"},
+        503: {
+            "description": "Database unavailable, or embedding model unavailable "
+            "(not for mode=full_text)"
+        },
+    },
+)
+def hybrid_search(
+    body: HybridSearchRequest,
+    session: Annotated[Session, Depends(get_db_session)],
+    user: Annotated[User, Depends(get_current_user)],
+    embedder: Annotated[Embedder, Depends(get_embedder)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> HybridSearchResponse:
+    """Hybrid search: vector and PostgreSQL full-text candidates fused by Reciprocal Rank
+    Fusion. rrf_score orders results; it is neither a probability nor a cosine similarity.
+    """
+    outcome = search_service.hybrid_search(session, embedder, settings, user, body)
+    return HybridSearchResponse(
+        results=[HybridSearchResult(**asdict(hit)) for hit in outcome.hits],
+        mode=body.mode,
+        rrf_k=outcome.rrf_k,
+        candidate_pool=outcome.candidate_pool,
+        embedding_model=embedder.model_name,
+        full_text_configs=list(outcome.full_text_configs),
     )
