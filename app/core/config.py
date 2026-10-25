@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # Memory bound for one document: all its chunks and vectors are held until the final write.
     max_chunks_per_document: int = Field(default=20_000, ge=1)
 
+    # Semantic search: server-side statement timeout for the vector query.
+    search_timeout_ms: int = Field(default=5000, ge=100)
+
     # Indexing worker (python -m app.worker).
     worker_poll_interval_s: float = Field(default=2.0, gt=0)
     # A running job whose worker has been silent this long is assumed dead and is reclaimed.
