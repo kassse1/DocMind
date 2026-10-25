@@ -10,6 +10,8 @@ Work in progress.
   metadata persistence, duplicate detection.
 - **Phase 4 (done):** token-aware chunking, local multilingual embeddings, pgvector storage,
   background indexing worker on a PostgreSQL job queue, indexing status and retries.
+- **Phase 5 (in progress):** semantic search API (`POST /api/v1/search`) is done; the
+  labeled retrieval evaluation (Recall@k, Precision@k, MRR) is still to do.
 
 ## Quick start (Windows PowerShell)
 
@@ -59,6 +61,7 @@ App settings use the `DOCMIND_` prefix and are read from the environment or `.en
 | `DOCMIND_CHUNK_SIZE_TOKENS` | `256` | Max tokens per chunk (model tokenizer); must fit the model input |
 | `DOCMIND_CHUNK_OVERLAP_TOKENS` | `32` | Max tokens repeated from the previous chunk; must be < chunk size |
 | `DOCMIND_MAX_CHUNKS_PER_DOCUMENT` | `20000` | Larger documents fail with `too_many_chunks` (memory bound) |
+| `DOCMIND_SEARCH_TIMEOUT_MS` | `5000` | `statement_timeout` for the search query; exceeded = 503 |
 | `DOCMIND_WORKER_POLL_INTERVAL_S` | `2` | Worker sleep when the queue is empty |
 | `DOCMIND_JOB_LEASE_TIMEOUT_S` | `1800` | A `running` job older than this is assumed abandoned and reclaimed |
 | `DOCMIND_JOB_MAX_ATTEMPTS` | `3` | Attempts before a document is marked `failed` |
@@ -449,6 +452,123 @@ docker compose exec postgres psql -U docmind -d docmind -c "SELECT document_id, 
 Stopping with Ctrl+C mid-job leaves that job `running`. It is picked up again after
 `DOCMIND_JOB_LEASE_TIMEOUT_S`, or sooner if you lower that value.
 
+## Semantic search API
+
+`POST /api/v1/search` embeds a natural-language query and returns the most similar passages
+(chunks) of **your** indexed documents, best first.
+
+Prerequisites: migrations at `head` (`alembic upgrade head`), at least one document uploaded
+and indexed by the worker (status `ready`), and the `embeddings` extra installed in the API's
+environment (`pip install -e ".[embeddings]"`). The API process loads the same model as the
+worker on the **first** search request (a few seconds; the very first run may download it).
+Without the extra, search returns `503 embedding_unavailable` and everything else still works.
+
+```powershell
+$body = @{ query = "When do I have to pay the invoice?"; top_k = 3 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/search `
+  -ContentType "application/json; charset=utf-8" `
+  -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) | ConvertTo-Json -Depth 5
+
+# Only within some documents, and only results with cosine similarity >= 0.8
+$body = @{ query = "payment terms"; document_ids = @("<document-uuid>"); min_similarity = 0.8 } | ConvertTo-Json
+```
+
+The UTF-8 byte encoding matters for Russian and Kazakh queries: Windows PowerShell 5.1 would
+otherwise send the body in the local code page.
+
+Request body:
+
+| Field | Type | Default | Rules |
+|---|---|---|---|
+| `query` | string | required | Trimmed; 1 to 1000 characters |
+| `top_k` | int | `5` | 1 to 20 |
+| `document_ids` | list of UUIDs | all your documents | 1 to 50 ids; duplicates ignored; each must be yours |
+| `min_similarity` | float | none | -1 to 1; drops results with lower cosine similarity |
+
+Unknown fields are rejected (422), so a typo such as `topk` cannot be silently ignored.
+
+Response `200` (real output of the default model, from a 3-paragraph test document indexed
+with small 24-token chunks; the other two results are omitted here):
+
+```json
+{
+  "results": [
+    {
+      "document_id": "6ff889f2-822c-4661-b478-57dd6ef07509",
+      "filename": "contract.txt",
+      "chunk_id": "18b33b01-78eb-4e73-b6b5-a2318811d543",
+      "chunk_index": 0,
+      "page_number": null,
+      "char_start": 0,
+      "char_end": 70,
+      "content": "Payment is due within thirty days after the invoice has been received.",
+      "similarity": 0.8438019249557317
+    }
+  ],
+  "metric": "cosine",
+  "embedding_model": "intfloat/multilingual-e5-small"
+}
+```
+
+`page_number` is set for PDFs and `null` for TXT/DOCX. `char_start`/`char_end` locate the
+passage in the normalized page text. No matching chunk returns `200` with `"results": []`,
+including while documents are still being indexed.
+
+### Similarity score
+
+- **Metric:** cosine similarity = `1 - (embedding <=> query)` (pgvector cosine distance).
+  Stored and query vectors are both L2-normalized, so it equals their dot product and lies
+  in **[-1, 1]**. Higher is more similar.
+- It is a **ranking signal, not a probability or a confidence**. Its scale depends on the
+  model: e5 models place most text in a narrow high band. In the run above, all three
+  passages scored 0.80 to 0.84, including unrelated ones. That is why `min_similarity` has no
+  default. A useful threshold has to be measured on labeled data for a given model.
+- Only chunks embedded by the **same model** as the query are searched (`embedding_model`
+  column), with the same `query: `/`passage: ` prefixes and normalization as indexing. The
+  API reuses one embedder instance per process.
+- **Deterministic order:** by distance, then `document_id`, then `chunk_index` (a unique pair),
+  so equal scores always come back in the same order.
+
+### Errors
+
+| HTTP | `code` | When |
+|---|---|---|
+| 401 | `authentication_required` | `DOCMIND_ENVIRONMENT=prod` (no auth yet) |
+| 404 | `document_not_found` | An id in `document_ids` does not exist **or belongs to another user** (same answer, so ids of others' documents cannot be probed); `details.document_ids` lists them |
+| 405 | `method_not_allowed` | `GET` (the query is sent in the body so it stays out of URLs and access logs) |
+| 422 | `validation_error` | Missing/empty/too long query, `top_k` out of 1..20, bad UUID, unknown field, malformed JSON. The rejected input is not echoed back |
+| 503 | `embedding_unavailable` | Model not installed, not in the cache with downloads disabled, or produced invalid output |
+| 503 | `database_unavailable` | PostgreSQL unreachable, pool exhausted, or the query exceeded `DOCMIND_SEARCH_TIMEOUT_MS` |
+| 500 | `internal_error` | Anything unexpected (details only in server logs) |
+
+### How a search runs
+
+1. Validate the request (Pydantic), resolve the current user (development user until Phase 8).
+2. If `document_ids` is given, check they all belong to the user, **before** spending a model call.
+3. Embed the query with the shared embedder (`query: ` prefix, normalized, dimension checked).
+4. Set a transaction-local `statement_timeout`, then run one parameterized query in PostgreSQL:
+   join chunks to documents, filter by `documents.user_id`, `embedding_model` and the optional
+   filters, order by cosine distance, `LIMIT top_k`. Vectors never travel to Python except the
+   `top_k` results.
+
+Layers: `app/api/v1/search.py` (router) → `app/services/search.py` (use case, errors) →
+`app/retrieval/vector_search.py` (query). Phase 6 adds lexical retrieval beside it.
+
+**No vector index (yet), on purpose.** The query is an exact scan: 100% recall by
+construction. An approximate index (HNSW/IVFFlat) would also filter *after* the index scan,
+so per-user or per-document filters could return fewer than `top_k` rows unless iterative
+scans are tuned. `EXPLAIN ANALYZE` on the test database (PostgreSQL 17, pgvector 0.8.7) with
+20,000 random 384-dimensional chunks showed a sequential scan plus a top-N heapsort, with one
+run at about 14 ms execution time on this dev machine. That is a single observation, not a
+benchmark. An HNSW index (`vector_cosine_ops`, new migration) becomes worth it when measured
+latency says so. No migration was added in this phase.
+
+**Security.** Queries and passages are untrusted text. They are embedded and returned as data,
+never interpreted, and instructions inside documents are not followed. Clients must render
+`content` as plain text. Logs record user id, `top_k`, whether a filter was used, result
+count and duration, but never the query or passage text. Database errors are reported
+without driver messages (which can contain host, user or SQL).
+
 ## Tests
 
 ```powershell
@@ -467,7 +587,7 @@ Remove-Item Env:DOCMIND_RUN_MODEL_TESTS
 ```
 
 To run the PostgreSQL integration tests (models, constraints, cascades, migrations, readiness,
-uploads, indexing pipeline, job queue):
+uploads, indexing pipeline, job queue, vector search ranking, isolation and timeouts):
 
 ```powershell
 docker compose up -d postgres
@@ -498,14 +618,20 @@ SQLite would not prove the PostgreSQL schema works.
 
 ## Limitations (current phase)
 
-- No search, RAG, or authentication yet. `users` has no password column; authentication
-  arrives in Phase 8. All uploads belong to the development user.
+- No RAG or authentication yet. `users` has no password column; authentication arrives in
+  Phase 8. All uploads and searches act as the development user. Search already filters by
+  owner, so per-user isolation only needs real authentication behind `get_current_user`.
+- Retrieval quality is **not evaluated yet** (Phase 5 evaluation: Recall@k, Precision@k, MRR
+  on a labeled EN/RU/KK set). In a 3-query smoke run with the default model, the Russian query
+  "Когда нужно оплатить счёт?" ranked an unrelated passage above the payment passage. Treat
+  rankings as unverified until the evaluation exists.
+- Query embedding runs in the API process: each API worker holds its own copy of the model
+  (PyTorch, hundreds of MB of RAM), and the first search after a start is slow while it loads.
 - No endpoints yet to list, fetch or delete documents, to read indexing status (use SQL, see
   above), or to request a re-index (use `python -m app.worker reindex`).
 - Text is extracted twice: in the upload request (validation, in FastAPI's threadpool) and again
   by the worker. The upload-time parse of a large PDF still takes a while.
-- No vector index yet: Phase 5 adds one (or uses exact search) together with the search query,
-  based on measured data size and recall.
+- No vector index: search is an exact scan (see [Semantic search API](#semantic-search-api)).
 - The embedding model choice is provisional until the Phase 5 evaluation. Kazakh retrieval
   quality has only been sanity-checked on a few hand-written pairs.
 - A worker sends no heartbeat. A job that legitimately runs longer than
@@ -518,8 +644,8 @@ SQLite would not prove the PostgreSQL schema works.
   Multi-column layouts follow the PDF's content order, which can interleave columns.
 - PyMuPDF is AGPL-3.0 licensed. That matters if DocMind is ever distributed or offered as a
   closed-source network service.
-- Ownership isolation exists in the schema (`user_id` foreign keys) but is not enforced by any
-  API yet.
+- Ownership isolation is enforced by search (tested with two users), but there is only one
+  user in practice until authentication exists.
 - Email uniqueness is case-insensitive only through ORM normalization. Raw SQL inserts bypass it.
 - The readiness endpoint checks database connectivity only. It does not check that migrations
   are at `head`.
