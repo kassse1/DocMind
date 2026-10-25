@@ -1,0 +1,153 @@
+{
+  "name": "docmind-search-eval",
+  "version": "1.0.0",
+  "description": "Synthetic EN/RU/KK passages and questions for retrieval evaluation. All organizations, prices, dates and rules are invented. Each language has its own document collection; queries are judged against passages of their own language only.",
+  "documents": [
+    {
+      "id": "en-billing",
+      "language": "en",
+      "title": "Northwind Office Supplies: billing policy",
+      "passages": [
+        {"id": "en-billing-01", "text": "Invoices are issued on the first business day of each month and must be paid within 30 days of the invoice date."},
+        {"id": "en-billing-02", "text": "If payment is not received by the due date, a late fee of 1.5% of the outstanding amount is charged for each month of delay."},
+        {"id": "en-billing-03", "text": "Customers can pay by bank transfer or with a corporate card. Cash payments are not accepted at any office."},
+        {"id": "en-billing-04", "text": "Refunds for overpaid invoices are returned to the original payment method within ten business days after the request is approved."},
+        {"id": "en-billing-05", "text": "Every invoice lists the order number, the VAT amount and the name of the account manager responsible for the customer."}
+      ]
+    },
+    {
+      "id": "en-delivery",
+      "language": "en",
+      "title": "Northwind Office Supplies: delivery and returns",
+      "passages": [
+        {"id": "en-delivery-01", "text": "Standard orders are delivered within three business days to any address inside the city limits."},
+        {"id": "en-delivery-02", "text": "Deliveries outside the city take five to seven business days and carry a fixed surcharge of 12 dollars per order."},
+        {"id": "en-delivery-03", "text": "Damaged goods must be reported within 48 hours of delivery, together with photos of the packaging."},
+        {"id": "en-delivery-04", "text": "Unopened items may be returned within 14 days. The customer pays the return shipping unless the item was defective."},
+        {"id": "en-delivery-05", "text": "Orders placed after 3 p.m. are processed on the next business day, and weekend orders are processed on Monday."}
+      ]
+    },
+    {
+      "id": "en-leave",
+      "language": "en",
+      "title": "Northwind Office Supplies: employee leave policy",
+      "passages": [
+        {"id": "en-leave-01", "text": "Full-time employees receive 24 days of paid annual leave per calendar year."},
+        {"id": "en-leave-02", "text": "Up to five unused leave days can be carried over to the next year. The remaining days expire on 31 December."},
+        {"id": "en-leave-03", "text": "Sick leave requires a medical certificate if the absence lasts longer than three consecutive days."},
+        {"id": "en-leave-04", "text": "Leave requests must be submitted in the HR portal at least two weeks before the first day of absence."},
+        {"id": "en-leave-05", "text": "Employees who work on a public holiday receive double pay or an extra day off, at their choice."}
+      ]
+    },
+    {
+      "id": "ru-payment",
+      "language": "ru",
+      "title": "«Чистый родник»: порядок оплаты услуг",
+      "passages": [
+        {"id": "ru-payment-01", "text": "Счёт за услуги выставляется до пятого числа каждого месяца. Оплатить его необходимо в течение десяти рабочих дней с даты выставления."},
+        {"id": "ru-payment-02", "text": "За каждый день просрочки оплаты начисляется пеня в размере 0,1% от неоплаченной суммы, но не более 10% от суммы счёта."},
+        {"id": "ru-payment-03", "text": "Оплата принимается банковским переводом, через мобильное приложение банка или через платёжный терминал в офисе компании."},
+        {"id": "ru-payment-04", "text": "Если клиент оплатил счёт дважды, излишне уплаченная сумма засчитывается в оплату следующего месяца либо возвращается по письменному заявлению."},
+        {"id": "ru-payment-05", "text": "Стоимость одной бутыли воды объёмом 19 литров составляет 1200 тенге. При заказе от десяти бутылей действует скидка 5%."}
+      ]
+    },
+    {
+      "id": "ru-delivery",
+      "language": "ru",
+      "title": "«Чистый родник»: доставка воды",
+      "passages": [
+        {"id": "ru-delivery-01", "text": "Доставка воды осуществляется ежедневно с 9:00 до 20:00, кроме воскресенья."},
+        {"id": "ru-delivery-02", "text": "Заказ, оформленный до 14:00, доставляется в тот же день. Заказы, оформленные после 14:00, переносятся на следующий день."},
+        {"id": "ru-delivery-03", "text": "Пустые бутыли курьер забирает при следующей доставке. За повреждённую или утерянную бутыль удерживается залог 3000 тенге."},
+        {"id": "ru-delivery-04", "text": "Доставка бесплатна при заказе от двух бутылей. При заказе одной бутыли стоимость доставки составляет 500 тенге."}
+      ]
+    },
+    {
+      "id": "ru-contract",
+      "language": "ru",
+      "title": "«Чистый родник»: срок действия и расторжение договора",
+      "passages": [
+        {"id": "ru-contract-01", "text": "Договор заключается на один год и автоматически продлевается, если ни одна из сторон не заявила о его прекращении."},
+        {"id": "ru-contract-02", "text": "Клиент вправе расторгнуть договор в одностороннем порядке, письменно уведомив компанию не позднее чем за тридцать дней."},
+        {"id": "ru-contract-03", "text": "При расторжении договора клиент обязан погасить задолженность и вернуть все бутыли в течение пяти дней."},
+        {"id": "ru-contract-04", "text": "Компания может приостановить обслуживание, если задолженность клиента не погашена более двух месяцев."},
+        {"id": "ru-contract-05", "text": "Споры по договору разрешаются путём переговоров, а при недостижении согласия — в суде по месту нахождения компании."}
+      ]
+    },
+    {
+      "id": "kk-tuition",
+      "language": "kk",
+      "title": "«Жібек жолы» колледжі: оқу ақысын төлеу",
+      "passages": [
+        {"id": "kk-tuition-01", "text": "Оқу ақысы әр семестр басталғанға дейін, яғни 1 қыркүйекке және 15 қаңтарға дейін толық төленуі тиіс."},
+        {"id": "kk-tuition-02", "text": "Төлем мерзімі өткен жағдайда студент сабаққа уақытша жіберілмейді және әр күнге 0,05% өсімпұл есептеледі."},
+        {"id": "kk-tuition-03", "text": "Оқу ақысын банк аударымы арқылы, мобильді банк қосымшасы арқылы немесе колледж кассасында төлеуге болады."},
+        {"id": "kk-tuition-04", "text": "Үздік оқитын студенттерге оқу ақысынан 20% жеңілдік беріледі. Жеңілдік әр семестр сайын қайта қаралады."},
+        {"id": "kk-tuition-05", "text": "Студент оқудан шығып кетсе, төленген ақының пайдаланылмаған бөлігі өтініш негізінде отыз күн ішінде қайтарылады."}
+      ]
+    },
+    {
+      "id": "kk-dorm",
+      "language": "kk",
+      "title": "«Жібек жолы» колледжі: жатақхана ережесі",
+      "passages": [
+        {"id": "kk-dorm-01", "text": "Жатақханада тұру ақысы айына 15 000 теңге және ол әр айдың 10-на дейін төленеді."},
+        {"id": "kk-dorm-02", "text": "Жатақхана есігі түнгі сағат 23:00-де жабылып, таңғы 6:00-де ашылады."},
+        {"id": "kk-dorm-03", "text": "Бөлмеде электр плиталарын пайдалануға тыйым салынады. Тамақты тек ортақ асүйде дайындауға болады."},
+        {"id": "kk-dorm-04", "text": "Қонақтар жатақханаға 10:00-ден 20:00-ге дейін, күзетшіге жеке куәлігін көрсетіп кіре алады."}
+      ]
+    },
+    {
+      "id": "kk-library",
+      "language": "kk",
+      "title": "«Жібек жолы» колледжі: кітапхана ережесі",
+      "passages": [
+        {"id": "kk-library-01", "text": "Кітапхана дүйсенбіден жұмаға дейін 9:00-ден 19:00-ге дейін, сенбі күні 10:00-ден 15:00-ге дейін жұмыс істейді."},
+        {"id": "kk-library-02", "text": "Студент бір мезгілде бес кітапқа дейін алып, оларды он төрт күн ішінде қайтаруы керек."},
+        {"id": "kk-library-03", "text": "Кітапты кешіктіріп қайтарғаны үшін әр күнге 100 теңге айыппұл салынады."},
+        {"id": "kk-library-04", "text": "Жоғалған кітаптың орнына студент дәл сондай кітап әкелуі немесе оның құнын екі есе мөлшерде төлеуі тиіс."},
+        {"id": "kk-library-05", "text": "Электрондық каталог арқылы кітапты алдын ала брондауға болады. Бронь үш күн сақталады."}
+      ]
+    }
+  ],
+  "queries": [
+    {"id": "en-q01", "language": "en", "difficulty": "straightforward", "text": "How many days do I have to pay an invoice?", "relevant": ["en-billing-01"]},
+    {"id": "en-q02", "language": "en", "difficulty": "paraphrase", "text": "What happens if we settle the bill late?", "relevant": ["en-billing-02"]},
+    {"id": "en-q03", "language": "en", "difficulty": "straightforward", "text": "Can I pay with cash?", "relevant": ["en-billing-03"]},
+    {"id": "en-q04", "language": "en", "difficulty": "challenging", "text": "I paid twice by mistake, when will I get my money back?", "relevant": ["en-billing-04"]},
+    {"id": "en-q05", "language": "en", "difficulty": "straightforward", "text": "How long does standard delivery take?", "relevant": ["en-delivery-01"]},
+    {"id": "en-q06", "language": "en", "difficulty": "paraphrase", "text": "Is there an extra charge for shipping to another town?", "relevant": ["en-delivery-02"]},
+    {"id": "en-q07", "language": "en", "difficulty": "challenging", "text": "The box arrived crushed, what should I do?", "relevant": ["en-delivery-03"]},
+    {"id": "en-q08", "language": "en", "difficulty": "paraphrase", "text": "Who covers the postage when I send something back?", "relevant": ["en-delivery-04"]},
+    {"id": "en-q09", "language": "en", "difficulty": "straightforward", "text": "How much paid vacation do full-time staff get?", "relevant": ["en-leave-01"]},
+    {"id": "en-q10", "language": "en", "difficulty": "challenging", "text": "Can I keep my unused holidays for next year?", "relevant": ["en-leave-02"]},
+    {"id": "en-q11", "language": "en", "difficulty": "paraphrase", "text": "When do I need a doctor's note for being ill?", "relevant": ["en-leave-03"]},
+    {"id": "en-q12", "language": "en", "difficulty": "challenging", "text": "What extra fees can be added to the amount I pay?", "relevant": ["en-billing-02", "en-delivery-02"]},
+
+    {"id": "ru-q01", "language": "ru", "difficulty": "straightforward", "text": "Когда нужно оплатить счёт?", "relevant": ["ru-payment-01"]},
+    {"id": "ru-q02", "language": "ru", "difficulty": "paraphrase", "text": "В какой срок клиент должен внести плату за услуги?", "relevant": ["ru-payment-01"]},
+    {"id": "ru-q03", "language": "ru", "difficulty": "straightforward", "text": "Какой штраф за просрочку платежа?", "relevant": ["ru-payment-02"]},
+    {"id": "ru-q04", "language": "ru", "difficulty": "straightforward", "text": "Какими способами можно оплатить?", "relevant": ["ru-payment-03"]},
+    {"id": "ru-q05", "language": "ru", "difficulty": "challenging", "text": "Я случайно заплатил два раза, что будет с деньгами?", "relevant": ["ru-payment-04"]},
+    {"id": "ru-q06", "language": "ru", "difficulty": "paraphrase", "text": "Нужно ли каждый год заново подписывать договор?", "relevant": ["ru-contract-01"]},
+    {"id": "ru-q07", "language": "ru", "difficulty": "straightforward", "text": "Во сколько привозят воду?", "relevant": ["ru-delivery-01"]},
+    {"id": "ru-q08", "language": "ru", "difficulty": "paraphrase", "text": "Если заказать вечером, когда доставят?", "relevant": ["ru-delivery-02"]},
+    {"id": "ru-q09", "language": "ru", "difficulty": "challenging", "text": "Что будет, если я разобью бутыль?", "relevant": ["ru-delivery-03"]},
+    {"id": "ru-q10", "language": "ru", "difficulty": "straightforward", "text": "Как расторгнуть договор?", "relevant": ["ru-contract-02"]},
+    {"id": "ru-q11", "language": "ru", "difficulty": "challenging", "text": "Могут ли перестать обслуживать за долги?", "relevant": ["ru-contract-04"]},
+    {"id": "ru-q12", "language": "ru", "difficulty": "challenging", "text": "Сколько придётся заплатить за доставку и за тару?", "relevant": ["ru-delivery-03", "ru-delivery-04"]},
+
+    {"id": "kk-q01", "language": "kk", "difficulty": "straightforward", "text": "Оқу ақысын қашан төлеу керек?", "relevant": ["kk-tuition-01"]},
+    {"id": "kk-q02", "language": "kk", "difficulty": "paraphrase", "text": "Семестр ақысын төлеудің соңғы мерзімі қандай?", "relevant": ["kk-tuition-01"]},
+    {"id": "kk-q03", "language": "kk", "difficulty": "straightforward", "text": "Оқу ақысын кешіктірсем не болады?", "relevant": ["kk-tuition-02"]},
+    {"id": "kk-q04", "language": "kk", "difficulty": "straightforward", "text": "Оқу ақысын қалай төлеуге болады?", "relevant": ["kk-tuition-03"]},
+    {"id": "kk-q05", "language": "kk", "difficulty": "paraphrase", "text": "Жақсы оқитын студенттерге жеңілдік бар ма?", "relevant": ["kk-tuition-04"]},
+    {"id": "kk-q06", "language": "kk", "difficulty": "challenging", "text": "Оқуды тастасам, ақшамды қайтарып ала аламын ба?", "relevant": ["kk-tuition-05"]},
+    {"id": "kk-q07", "language": "kk", "difficulty": "straightforward", "text": "Жатақханада тұру қанша тұрады?", "relevant": ["kk-dorm-01"]},
+    {"id": "kk-q08", "language": "kk", "difficulty": "paraphrase", "text": "Жатақхана түнде нешеде жабылады?", "relevant": ["kk-dorm-02"]},
+    {"id": "kk-q09", "language": "kk", "difficulty": "paraphrase", "text": "Бөлмеде тамақ пісіруге бола ма?", "relevant": ["kk-dorm-03"]},
+    {"id": "kk-q10", "language": "kk", "difficulty": "straightforward", "text": "Кітапхана сенбіде жұмыс істей ме?", "relevant": ["kk-library-01"]},
+    {"id": "kk-q11", "language": "kk", "difficulty": "challenging", "text": "Кітапты жоғалтып алсам, не істеуім керек?", "relevant": ["kk-library-04"]},
+    {"id": "kk-q12", "language": "kk", "difficulty": "challenging", "text": "Кітапты кешіктіріп қайтарсам немесе жоғалтсам, қандай жаза бар?", "relevant": ["kk-library-03", "kk-library-04"]}
+  ]
+}
