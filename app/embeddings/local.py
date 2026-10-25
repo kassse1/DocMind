@@ -97,6 +97,10 @@ class SentenceTransformerEmbedder:
         self._loaded()
         return self._max_input_tokens
 
+    @property
+    def device(self) -> str:
+        return str(self._loaded().device)
+
     def _encode(self, texts: list[str]) -> np.ndarray:
         vectors = self._loaded().encode(
             texts,
