@@ -10,8 +10,9 @@ Work in progress.
   metadata persistence, duplicate detection.
 - **Phase 4 (done):** token-aware chunking, local multilingual embeddings, pgvector storage,
   background indexing worker on a PostgreSQL job queue, indexing status and retries.
-- **Phase 5 (in progress):** semantic search API (`POST /api/v1/search`) is done; the
-  labeled retrieval evaluation (Recall@k, Precision@k, MRR) is still to do.
+- **Phase 5 (done, pending review):** semantic search API (`POST /api/v1/search`) and a
+  labeled EN/RU/KK retrieval evaluation (Recall@k, Precision@k, MRR) comparing
+  multilingual-e5-small with bge-m3.
 
 ## Quick start (Windows PowerShell)
 
@@ -400,14 +401,14 @@ prefixes, which the embedder adds itself.
 | Dimensions | 384 | 1024 |
 | Max input | 512 tokens | 8192 tokens |
 | Size (model cards) | ~118M parameters | ~568M parameters |
-| On this dev machine | Downloaded (~470 MB in the HF cache); runs on CPU | Not downloaded or tested |
+| On this dev machine | Downloaded (~470 MB in the HF cache); runs on CPU | Downloaded (~2.3 GB, see below); evaluated on CPU |
 
 Why the small model now: it keeps the default setup CPU-only and quick to download, and its
 vectors take about a third of the storage of bge-m3's. bge-m3 accepts much longer inputs and is
-the quality candidate. **The choice is provisional:** Phase 5 compares models on a labeled
-English/Russian/Kazakh dataset (Recall@k, MRR). So far only integration sanity checks exist:
-three hand-written cross-lingual pairs (EN↔RU, EN↔KK, RU↔EN) where the relevant passage scores
-higher than an unrelated one. That is not a quality benchmark.
+the quality candidate. The two were compared on a small labeled dataset (see
+[Search quality evaluation](#search-quality-evaluation)). bge-m3 did somewhat better there,
+but the dataset is too small to justify a migration and full re-index on its own, so the
+default is unchanged for now.
 
 **Switching models** changes the vector size, so it requires: adding the model to
 `KNOWN_MODELS`, a new migration that changes `document_chunks.embedding` to the new dimension
@@ -427,8 +428,19 @@ a model repository runs.
 - The first worker start (or first real-model test) downloads the model through the
   Hugging Face Hub library into `DOCMIND_EMBEDDING_CACHE_DIR`, or by default
   `%USERPROFILE%\.cache\huggingface`. Later starts load it from the cache.
-- `DOCMIND_EMBEDDING_ALLOW_DOWNLOAD=false` makes the worker fail instead of downloading. Use it
-  for offline or production machines with a pre-filled cache.
+- `DOCMIND_EMBEDDING_ALLOW_DOWNLOAD=false` makes the worker fail instead of downloading model
+  files. It does **not** stop every network request: `huggingface_hub` also fetches a small
+  registry (`/api/agent-harnesses`, at most once a day) and checks model metadata. For a fully
+  offline process, also set `HF_HUB_OFFLINE=1` in the **process environment** before starting it.
+  The library reads it at import time. Putting it in `.env` does not work, because
+  pydantic-settings loads `.env` into the settings object, not into `os.environ`:
+
+  ```powershell
+  $env:HF_HUB_OFFLINE = "1"
+  python -m app.worker        # or uvicorn app.main:app
+  ```
+
+  With it set, the library logs "offline mode is enabled" and uses the cached commit.
 - On Windows without Developer Mode, the library warns that symlinks are unsupported and stores
   files without deduplication. To silence it: `$env:HF_HUB_DISABLE_SYMLINKS_WARNING = "1"`.
 - `pip install -e ".[embeddings]"` installs the CPU build of PyTorch from PyPI. A GPU needs a
@@ -569,6 +581,169 @@ never interpreted, and instructions inside documents are not followed. Clients m
 count and duration, but never the query or passage text. Database errors are reported
 without driver messages (which can contain host, user or SQL).
 
+## Search quality evaluation
+
+A small, version-controlled benchmark checks how well search ranks the right passage, and
+compares embedding models on identical inputs. It reports numbers for **this dataset only**.
+They do not represent real-world performance, and they do not generalize to all English,
+Russian or Kazakh documents.
+
+### Dataset (`app/evaluation/datasets/search_eval_v1.json`, v1.0.0)
+
+| | EN | RU | KK | Total |
+|---|---|---|---|---|
+| Documents | 3 | 3 | 3 | 9 |
+| Passages (= chunks) | 15 | 14 | 14 | 43 |
+| Queries | 12 | 12 | 12 | 36 |
+| straightforward / paraphrase / challenging | 4 / 4 / 4 | 5 / 3 / 4 | 5 / 4 / 3 | |
+| Queries with 2 relevant passages | 1 | 1 | 1 | 3 |
+
+All text is invented: a billing, delivery and HR policy (EN), a water-delivery contract (RU), and
+college tuition, dormitory and library rules (KK). Prices, dates and names are fictional.
+
+**Labeling rules** (binary relevance; also in `app/evaluation/dataset.py`):
+
+- A passage is relevant if it alone answers the question. Same-topic passages that do not
+  answer it are **hard negatives**. For example, the late-fee, refund and payment-method
+  passages sit next to the due-date passage, and a library fine sits next to the late tuition rule.
+- Each language has its own collection with different facts (no translations). A query is
+  judged and searched only within its language's documents, through the API's
+  `document_ids` filter.
+- One passage = one chunk. The run checks this with each model's real tokenizer and the
+  production chunker (256 tokens), so passage ids are stable chunk ids.
+
+The loader rejects duplicate ids, labels pointing to unknown passages or to another
+language, queries without labels, and passages that are not in normalized form (tests in
+`tests/test_eval_dataset.py`).
+
+### Metrics
+
+Binary relevance, computed on the ranked list exactly as the search returned it. Ties in
+similarity are already broken by the search (`document_id`, then `chunk_index`), so the
+metrics never re-sort. A repeated id counts once.
+
+- **Recall@k** = relevant passages in the top k / relevant passages for the query.
+- **Precision@k** = relevant passages in the top k / **k**. The denominator stays k even when
+  a query has fewer relevant passages, so with one relevant passage the best P@3 is 0.333 and
+  the best P@5 is 0.2.
+- **MRR@5** = mean of 1/rank of the first relevant passage. It is 0 when none is in the
+  retrieved top 5 (retrieval depth = largest k).
+- **Aggregation:** "overall" weights every query equally. Per-language numbers average the
+  queries of that language. "Macro" averages the three language means, so each language
+  weighs the same. With 12 queries per language, overall and macro are identical here.
+
+### How to run
+
+```powershell
+# Needs PostgreSQL (docker compose up -d postgres) and a migrated *_test database.
+$env:DOCMIND_TEST_DATABASE_URL = ((Get-Content .env | Select-String '^DOCMIND_DATABASE_URL=').Line -replace '^DOCMIND_DATABASE_URL=','').Trim() -replace '/docmind$','/docmind_test'
+
+python -m app.evaluation.run_search_eval --models current,bge-m3 --k 1,3,5            # downloads missing models
+python -m app.evaluation.run_search_eval --models current,bge-m3 --k 1,3,5 --offline  # cached models only
+python -m app.evaluation.run_search_eval --models current                             # one model
+```
+
+- `current` is `DOCMIND_EMBEDDING_MODEL`. Aliases: `e5-small`, `bge-m3`. Only models in
+  `KNOWN_MODELS` are accepted.
+- `--offline` sets `HF_HUB_OFFLINE=1` before any Hugging Face import: no network requests, and a
+  model missing from the cache is reported as `unavailable` while the other models still run.
+- The report goes to `docs/evaluation/search_eval_v<dataset version>.json` (or `--output`). It
+  holds only synthetic text, ids, scores, settings and library versions: no credentials, no
+  paths, no user data.
+
+**Same path as the API.** Each query goes through `app.services.search.search`, the function
+behind `POST /api/v1/search`: the same validation, the model's query prefix (`query: ` for e5,
+none for bge-m3, per `KNOWN_MODELS`), L2 normalization, pgvector cosine distance,
+tie-breaking, and owner, model and document filtering. Passages are embedded with the
+indexer's `embed_passages` (`passage: ` prefix for e5).
+
+**Isolation.** The runner refuses any database whose name does not end in `_test` (the same
+guard as the integration tests). Per model, it creates a private schema `docmind_eval_<random>`
+holding the app's tables with a `vector(<model dimension>)` column (1024 for bge-m3; the real
+column stays `vector(384)`). All of it happens inside one transaction that is always rolled back.
+PostgreSQL DDL is transactional, so nothing is left behind even if the process dies. It also
+checks that a second user's copies of every passage never appear in unfiltered results.
+
+### Results (v1.0.0, `docs/evaluation/search_eval_v1.0.0.json`)
+
+Both models ran on the same dataset, chunking, queries, labels, k values and search code.
+The run used `--offline`, on CPU (AMD Ryzen 5 7500F, 32 GB RAM, Windows 11), with Python
+3.13.14, torch 2.14.1+cpu, transformers 5.20.2, sentence-transformers 6.2.0, huggingface-hub
+2.3.0, PostgreSQL 17.11 and pgvector 0.8.7. A separate online run of bge-m3 gave identical
+per-query results.
+
+| Model | Scope | R@1 | R@3 | R@5 | P@1 | P@3 | P@5 | MRR@5 |
+|---|---|---|---|---|---|---|---|---|
+| multilingual-e5-small | overall | 0.903 | 0.944 | 0.958 | 0.944 | 0.333 | 0.206 | 0.958 |
+| multilingual-e5-small | EN | 0.958 | 0.958 | 0.958 | 1.000 | 0.333 | 0.200 | 1.000 |
+| multilingual-e5-small | RU | 0.958 | 0.958 | 1.000 | 1.000 | 0.333 | 0.217 | 1.000 |
+| multilingual-e5-small | KK | 0.792 | 0.917 | 0.917 | 0.833 | 0.333 | 0.200 | 0.875 |
+| multilingual-e5-small | macro | 0.903 | 0.944 | 0.958 | 0.944 | 0.333 | 0.206 | 0.958 |
+| bge-m3 | overall | 0.931 | 1.000 | 1.000 | 0.972 | 0.361 | 0.217 | 0.986 |
+| bge-m3 | EN | 0.958 | 1.000 | 1.000 | 1.000 | 0.361 | 0.217 | 1.000 |
+| bge-m3 | RU | 0.958 | 1.000 | 1.000 | 1.000 | 0.361 | 0.217 | 1.000 |
+| bge-m3 | KK | 0.875 | 1.000 | 1.000 | 0.917 | 0.361 | 0.217 | 0.958 |
+| bge-m3 | macro | 0.931 | 1.000 | 1.000 | 0.972 | 0.361 | 0.217 | 0.986 |
+
+Model revisions (from the local cache): e5-small `614241f622f53c4eeff9890bdc4f31cfecc418b3`,
+bge-m3 `5617a9f61b028005a4858fdac845db406aefb181`. bge-m3 caveat: its `main` revision ships
+`pytorch_model.bin`, and during the download transformers also fetched `model.safetensors` from
+the repository's `refs/pr/130` (snapshot `9a0624b…`). The recorded revision is the `main`
+config snapshot. The weight file actually loaded may be that safetensors conversion; this was
+not verified further.
+
+### Error analysis
+
+- **Russian billing/payment queries** (the motivating case): both models rank the due-date
+  passage `ru-payment-01` first for "Когда нужно оплатить счёт?" (ru-q01) and its paraphrase
+  (ru-q02), above the hard negatives "double payment" (`ru-payment-04`), late penalty and
+  contract-debt passages. e5-small's lead is thin: 0.8715 vs 0.8572 on ru-q01 and 0.8612 vs
+  0.8345 on ru-q02. bge-m3's is wider: 0.7586 vs 0.6483 and 0.7303 vs 0.6355. This does
+  **not** show that the earlier smoke-test failure is fixed. That case was a Russian query
+  against an **English** document (cross-lingual), and this dataset has no cross-lingual
+  queries.
+- **e5-small misses (2/36 at rank 1, both Kazakh):** kk-q03 "Оқу ақысын кешіктірсем не болады?"
+  (late tuition): the relevant passage is not in the top 5 at all. The withdrawal-refund,
+  discount and library passages rank above it. kk-q11 "lost library book": the borrowing-rules
+  passage ranks above the lost-book rule (0.8021 vs 0.7974).
+- **bge-m3 miss (1/36):** kk-q03 again, at rank 2, behind the tuition due-date passage
+  (0.6497 vs 0.6369).
+- **Multi-relevant queries** (en-q12, ru-q12, kk-q12): bge-m3 put both relevant passages in its
+  top 2 for all three. e5-small did for kk-q12 only: for ru-q12 the second one was at rank 5,
+  and for en-q12 (delivery surcharge) it was not in the top 5.
+- **How much the comparison says:** the gap is 1 to 2 queries out of 36 (for example, R@3 0.944 vs
+  1.000 means 2 queries). That is consistent with bge-m3 being stronger, mainly on Kazakh, but
+  it is not statistically meaningful. Reasons to expand the set (more queries, cross-lingual
+  pairs) before switching: a migration to `vector(1024)`, a full re-index, about 2.7x vector
+  storage, and slower queries (below).
+
+### Interpreting similarity scores
+
+Scores are cosine similarities: a ranking signal, not probabilities, and **not comparable
+across models**. In the top 5, e5-small scored 0.771 to 0.907, while bge-m3 scored 0.376 to 0.790.
+The median lead of the best relevant passage over the best hard negative was 0.013 to 0.025
+for e5-small and 0.103 to 0.116 for bge-m3, depending on the language. A fixed
+`min_similarity` would mean different things per model, which is why it has no default.
+
+### Timing (indicative, one run, not a benchmark)
+
+Per query (query embedding plus PostgreSQL search, CPU), median over 36 queries:
+e5-small 13.6 ms (max 28.8), bge-m3 87.9 ms (max 136.0). Embedding the 43 passages and
+inserting them took 0.34 s vs 2.57 s. Model load times in the report (6.5 s vs 2.0 s) are
+not comparable: the first load also paid for importing PyTorch.
+
+### Limitations
+
+- 36 queries and 43 short passages: enough to expose obvious ranking failures, too few for
+  confident model selection or significance claims.
+- Monolingual only. The corpus is searched per language, so cross-lingual retrieval and
+  ranking across languages are not covered.
+- Passages are one or two sentences, much shorter than real 256-token chunks. Long, noisy or
+  multi-topic chunks are not represented.
+- Labels were written by the same author as the passages (no second annotator), and the
+  wording of some queries overlaps with the passages.
+- Scores depend on the model revision and library versions recorded in the report.
+
 ## Tests
 
 ```powershell
@@ -621,10 +796,9 @@ SQLite would not prove the PostgreSQL schema works.
 - No RAG or authentication yet. `users` has no password column; authentication arrives in
   Phase 8. All uploads and searches act as the development user. Search already filters by
   owner, so per-user isolation only needs real authentication behind `get_current_user`.
-- Retrieval quality is **not evaluated yet** (Phase 5 evaluation: Recall@k, Precision@k, MRR
-  on a labeled EN/RU/KK set). In a 3-query smoke run with the default model, the Russian query
-  "Когда нужно оплатить счёт?" ranked an unrelated passage above the payment passage. Treat
-  rankings as unverified until the evaluation exists.
+- Retrieval quality is measured only on a small synthetic dataset (36 queries) and only
+  **within one language**. Cross-lingual retrieval is not evaluated. The earlier smoke-run
+  miss (Russian query against an English document) is still an open, untested case.
 - Query embedding runs in the API process: each API worker holds its own copy of the model
   (PyTorch, hundreds of MB of RAM), and the first search after a start is slow while it loads.
 - No endpoints yet to list, fetch or delete documents, to read indexing status (use SQL, see
@@ -632,8 +806,9 @@ SQLite would not prove the PostgreSQL schema works.
 - Text is extracted twice: in the upload request (validation, in FastAPI's threadpool) and again
   by the worker. The upload-time parse of a large PDF still takes a while.
 - No vector index: search is an exact scan (see [Semantic search API](#semantic-search-api)).
-- The embedding model choice is provisional until the Phase 5 evaluation. Kazakh retrieval
-  quality has only been sanity-checked on a few hand-written pairs.
+- The embedding model choice is still provisional: the evaluation favours bge-m3 by one or two
+  queries out of 36, which is not enough evidence on its own. Kazakh is the weakest language
+  for both models on that set.
 - A worker sends no heartbeat. A job that legitimately runs longer than
   `DOCMIND_JOB_LEASE_TIMEOUT_S` can be reclaimed by another worker. Fencing discards the
   duplicate result, but the work is repeated.
