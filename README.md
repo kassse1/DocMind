@@ -13,6 +13,9 @@ Work in progress.
 - **Phase 5 (done, pending review):** semantic search API (`POST /api/v1/search`) and a
   labeled EN/RU/KK retrieval evaluation (Recall@k, Precision@k, MRR) comparing
   multilingual-e5-small with bge-m3.
+- **Phase 6 (done, pending review):** PostgreSQL full-text search (generated `tsvector` +
+  GIN index) and hybrid retrieval with Reciprocal Rank Fusion (`POST /api/v1/search/hybrid`),
+  evaluated against semantic-only search.
 
 ## Quick start (Windows PowerShell)
 
@@ -62,7 +65,9 @@ App settings use the `DOCMIND_` prefix and are read from the environment or `.en
 | `DOCMIND_CHUNK_SIZE_TOKENS` | `256` | Max tokens per chunk (model tokenizer); must fit the model input |
 | `DOCMIND_CHUNK_OVERLAP_TOKENS` | `32` | Max tokens repeated from the previous chunk; must be < chunk size |
 | `DOCMIND_MAX_CHUNKS_PER_DOCUMENT` | `20000` | Larger documents fail with `too_many_chunks` (memory bound) |
-| `DOCMIND_SEARCH_TIMEOUT_MS` | `5000` | `statement_timeout` for the search query; exceeded = 503 |
+| `DOCMIND_SEARCH_TIMEOUT_MS` | `5000` | `statement_timeout` for each search query; exceeded = 503 |
+| `DOCMIND_HYBRID_CANDIDATE_POOL` | `50` | Hybrid search: candidates per branch before fusion (1..100; never below `top_k`) |
+| `DOCMIND_HYBRID_RRF_K` | `60` | Hybrid search: RRF constant k in 1/(k + rank) |
 | `DOCMIND_WORKER_POLL_INTERVAL_S` | `2` | Worker sleep when the queue is empty |
 | `DOCMIND_JOB_LEASE_TIMEOUT_S` | `1800` | A `running` job older than this is assumed abandoned and reclaimed |
 | `DOCMIND_JOB_MAX_ATTEMPTS` | `3` | Attempts before a document is marked `failed` |
@@ -170,6 +175,7 @@ erDiagram
         vector_384 embedding "pgvector, unit length"
         varchar embedding_model
         jsonb metadata
+        tsvector search_vector "generated from content, GIN index"
         timestamptz created_at
     }
     jobs {
@@ -564,7 +570,8 @@ including while documents are still being indexed.
    `top_k` results.
 
 Layers: `app/api/v1/search.py` (router) → `app/services/search.py` (use case, errors) →
-`app/retrieval/vector_search.py` (query). Phase 6 adds lexical retrieval beside it.
+`app/retrieval/vector_search.py` (query). Lexical and hybrid retrieval sit beside it (see
+[Hybrid search](#hybrid-search-full-text--vector)).
 
 **No vector index (yet), on purpose.** The query is an exact scan: 100% recall by
 construction. An approximate index (HNSW/IVFFlat) would also filter *after* the index scan,
@@ -580,6 +587,245 @@ never interpreted, and instructions inside documents are not followed. Clients m
 `content` as plain text. Logs record user id, `top_k`, whether a filter was used, result
 count and duration, but never the query or passage text. Database errors are reported
 without driver messages (which can contain host, user or SQL).
+
+## Hybrid search (full-text + vector)
+
+`POST /api/v1/search/hybrid` adds PostgreSQL full-text search beside vector search and fuses
+the two ranked lists with **Reciprocal Rank Fusion (RRF)**. `POST /api/v1/search` is
+unchanged: same request, response, `similarity` meaning and errors. On the labeled set,
+hybrid ranked **worse** than semantic-only search (see [Measured results](#measured-results)),
+so semantic search stays the default and hybrid is opt-in.
+
+| | Semantic (`/search`) | Full-text (`mode=full_text`) | Hybrid (`mode=hybrid`, default) |
+|---|---|---|---|
+| Finds | Passages with similar meaning, even with no shared words | Passages sharing words (or stems) with the query | Union of both candidate lists |
+| Ranked by | Cosine similarity | `ts_rank` | RRF of the two ranks |
+| Needs the embedding model | yes | **no** | yes |
+| Good at | Paraphrases, cross-wording | Exact terms: names, codes, numbers, rare words | Combining both, when lexical evidence is reliable |
+
+### Request and response
+
+```powershell
+$body = @{ query = "late fee for an unpaid invoice"; top_k = 2 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/search/hybrid `
+  -ContentType "application/json; charset=utf-8" `
+  -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) | ConvertTo-Json -Depth 5
+
+# Full-text only (works without the embedding model), restricted to one document:
+$body = @{ query = "кітапхана"; mode = "full_text"; document_ids = @("<document-uuid>") } | ConvertTo-Json
+```
+
+| Field | Type | Default | Rules |
+|---|---|---|---|
+| `query` | string | required | Trimmed; 1 to 1000 characters (same as `/search`) |
+| `top_k` | int | `5` | 1 to 20 |
+| `document_ids` | list of UUIDs | all your documents | 1 to 50; each must be yours (404 otherwise, as in `/search`) |
+| `mode` | `hybrid` / `vector` / `full_text` | `hybrid` | `vector` / `full_text` run one branch only |
+| `candidate_pool` | int | `DOCMIND_HYBRID_CANDIDATE_POOL` (50) | 1 to 100 and at least `top_k`; candidates **per branch** before fusion |
+
+`min_similarity` is **not** accepted here (422): it is a cosine threshold, and fused ranks
+have no cosine scale. Unknown fields are rejected, as in `/search`.
+
+Response `200` (real output: default model, a 3-paragraph test document indexed with
+40-token chunks):
+
+```json
+{
+  "results": [
+    {
+      "document_id": "755fe1fd-2346-43ce-928e-23a8b07dc02a",
+      "filename": "policy.txt",
+      "chunk_id": "6e06f789-550a-4054-becc-3720d18c38f5",
+      "chunk_index": 1,
+      "page_number": null,
+      "char_start": 107,
+      "char_end": 238,
+      "content": "date.\n\nIf payment is not received by the due date, a late fee of 1.5% of the outstanding amount is charged for each month of delay.",
+      "rrf_score": 0.03278688524590164,
+      "vector_rank": 1,
+      "vector_similarity": 0.8839323257228074,
+      "full_text_rank": 1,
+      "full_text_score": 0.030396355
+    },
+    {
+      "document_id": "755fe1fd-2346-43ce-928e-23a8b07dc02a",
+      "filename": "policy.txt",
+      "chunk_id": "452c175f-4792-4b1d-aa66-2195c97ff165",
+      "chunk_index": 0,
+      "page_number": null,
+      "char_start": 0,
+      "char_end": 112,
+      "content": "Invoices are issued on the first business day of each month and must be paid within 30 days of the invoice date.",
+      "rrf_score": 0.03225806451612903,
+      "vector_rank": 2,
+      "vector_similarity": 0.8539361022825074,
+      "full_text_rank": 2,
+      "full_text_score": 0.019540515
+    }
+  ],
+  "mode": "hybrid",
+  "fusion": "rrf",
+  "rrf_k": 60,
+  "candidate_pool": 50,
+  "embedding_model": "intfloat/multilingual-e5-small",
+  "full_text_configs": ["simple", "russian"]
+}
+```
+
+Provenance fields are always present. They are `null` when that branch did not return the
+chunk, so `vector_similarity` never looks available for a full-text-only hit.
+
+### Reciprocal Rank Fusion
+
+`rrf_score = Σ 1 / (rrf_k + rank)` over the branches that returned the chunk (ranks are
+1-based; `rrf_k` = `DOCMIND_HYBRID_RRF_K`, default 60).
+
+- **Only ranks are fused.** Cosine similarity (−1..1, compressed around 0.8 for e5) and
+  `ts_rank` (small positive floats, query-dependent) are on unrelated scales. Adding them
+  would let whichever is larger dominate.
+- A chunk found by **both** branches gets two terms. With k = 60, rank 1 alone scores
+  1/61 ≈ 0.0164, while ranks 2 + 2 score 2/62 ≈ 0.0323.
+- `rrf_score` is **not a probability, not a cosine similarity, and not comparable across
+  queries.** Use it only to order one response. With a single branch (`mode=vector` or
+  `full_text`) it is 1/(k + rank), so the order equals that branch's order; a test checks
+  that `mode=vector` returns exactly the `/search` order.
+- **Ties** (common: vector rank 1 only vs full-text rank 1 only) are broken by
+  `document_id`, then `chunk_index`, as in `/search`. Duplicates are merged by chunk id, and
+  a chunk keeps its best rank in each branch.
+- **Bounded work:** each branch fetches at most `candidate_pool` rows (cap 100), and the
+  fused list is cut to `top_k`.
+
+### Eligibility, isolation and errors
+
+Both branches run in SQL with the same filters **before** fusion: `documents.user_id` (owner
+isolation), the optional `document_ids`, and `embedding_model` = the active model. Chunks of
+another model are never candidates, so both branches always see the same corpus. A foreign
+or unknown document id is a 404 (`document_not_found`), checked before any model call or
+search.
+
+Error policy (deliberate, no silent degradation):
+
+| Situation | Result |
+|---|---|
+| One branch finds nothing (no shared words, or no vector candidates) | The other branch's results, ranked by RRF |
+| Query with no usable terms (empty after parsing, punctuation only) | Full-text branch returns nothing; never a SQL error |
+| Embedding model unavailable, `mode=hybrid` or `vector` | `503 embedding_unavailable` (not a quiet fallback to full-text; ask for `mode=full_text` explicitly) |
+| Embedding model unavailable, `mode=full_text` | Works normally |
+| Database unreachable, pool exhausted, or `DOCMIND_SEARCH_TIMEOUT_MS` exceeded in either branch | `503 database_unavailable`; never half an answer |
+
+The statement timeout is set once per request transaction and applies to each statement
+(the vector query and the full-text query separately). Logs record user id, mode, `top_k`,
+pool, filter use, candidate counts and duration; never the query or passage text.
+
+Layers: `app/api/v1/search.py` (both endpoints) → `app/services/search.py` (`search`,
+`hybrid_search`, shared filter, embedding and timeout helpers) → `app/retrieval/`
+(`vector_search.py`, `full_text_search.py`, `fusion.py`). Hybrid reuses `vector_search`
+and the single per-process embedder; nothing is duplicated.
+
+### Full-text search: multilingual strategy
+
+`document_chunks.search_vector` is a **STORED generated column**:
+
+```sql
+to_tsvector('simple', content) || to_tsvector('russian', content)   -- + GIN index
+```
+
+- PostgreSQL 17 ships text-search configurations for English and Russian but **none for
+  Kazakh** (checked with `SELECT cfgname FROM pg_ts_config`). The two channels:
+  - `simple`: lowercased exact word forms, for every language. It is the only honest
+    option for Kazakh.
+  - `russian`: Russian Snowball stems for Cyrillic words and English stems for Latin words,
+    plus Russian/English stop-word removal. It also folds `ё` into `е`, so "счета" matches "Счёт".
+- **Any-term matching.** The query goes through `plainto_tsquery` once per configuration
+  (user-typed operators like `&`, `|` or `!` are plain text), and the terms are joined with
+  OR. AND semantics, the PostgreSQL default, returned **nothing for all 36** evaluation
+  questions: no passage contains every word of "How many days do I have to pay an invoice?".
+  Results are ranked by `ts_rank`, so chunks matching more terms rank higher.
+- **Always in sync.** PostgreSQL computes the column on every insert and update. Re-indexing
+  (delete + insert) and content edits update it, and the app never writes it. Tests cover
+  update, re-index and the GIN index being usable for `@@`.
+- **Safe input.** The query is only ever a bound parameter (a test sends
+  `x'); DROP TABLE users; --`). A query with no lexemes gives an empty `tsquery`, which
+  matches nothing.
+
+Known limitations:
+
+- **No Kazakh morphology:** "кітапхана" matches, but "кітапханаға" (dative) does not. The
+  Russian stemmer also runs over Kazakh words in the second channel; it strips some endings
+  (`оқу` → `оқ`) consistently on both sides, but it is not a Kazakh stemmer.
+- **Stop words still match** through the `simple` channel ("the", "and", "не", "в"). Built-in
+  English/Russian stop-word dictionaries on the `simple` template were measured and made no
+  difference on this dataset, so no custom text-search objects were added.
+- No phrase or proximity search, no typo tolerance, and no per-language query routing: the
+  query is processed with both configurations, whatever its language.
+
+### Migration and upgrade
+
+Revision `128b8af81b05` (after `76cdab7f68eb`) adds the generated column and the GIN index.
+Existing chunks are filled in during the upgrade, with no re-upload and no re-index needed.
+
+```powershell
+docker compose up -d postgres
+alembic current                     # expect 76cdab7f68eb before, 128b8af81b05 after
+alembic upgrade head --sql          # review the DDL first (optional)
+alembic upgrade head
+docker compose exec postgres psql -U docmind -d docmind -c "\d document_chunks"   # search_vector + GIN index
+alembic downgrade 76cdab7f68eb      # rollback: drops the index and the column
+```
+
+`ADD COLUMN ... GENERATED ALWAYS AS ... STORED` rewrites `document_chunks` under an
+`ACCESS EXCLUSIVE` lock, and the index is built in the same transaction. That is fine at this
+scale. On a large production table, plan a maintenance window or build the index with
+`CREATE INDEX CONCURRENTLY` outside a transaction. Tests upgrade a database that already
+holds Phase 4 chunks and check they become searchable, and also check the downgrade.
+
+### Measured results
+
+Same dataset (v1.0.0, 36 queries, 12 per language), same multilingual-e5-small embeddings and
+corpus, same metrics as the [Search quality evaluation](#search-quality-evaluation). Run
+offline on CPU, in one run (`docs/evaluation/search_eval_v1.0.0_semantic-full_text-hybrid.json`).
+Pool 50, k = 60. Each language collection has 14-15 passages, so the vector branch ranks the
+whole collection.
+
+| Retrieval | Scope | R@1 | R@3 | R@5 | P@1 | P@3 | P@5 | MRR@5 |
+|---|---|---|---|---|---|---|---|---|
+| semantic | overall | 0.903 | 0.944 | 0.958 | 0.944 | 0.333 | 0.206 | **0.958** |
+| full_text | overall | 0.556 | 0.708 | 0.736 | 0.583 | 0.259 | 0.161 | 0.655 |
+| hybrid | overall | 0.653 | 0.847 | 0.958 | 0.694 | 0.306 | 0.206 | 0.789 |
+| full_text | EN / RU / KK MRR@5 | | | | | | | 0.569 / 0.688 / 0.708 |
+| hybrid | EN / RU / KK MRR@5 | | | | | | | 0.781 / 0.774 / 0.812 |
+| semantic | EN / RU / KK MRR@5 | | | | | | | 1.000 / 1.000 / 0.875 |
+
+Macro averages equal the overall ones (12 queries per language). Re-running semantic-only
+reproduced the Phase 5 report query by query.
+
+**What happened:** hybrid kept Recall@5 (0.958) but moved the right passage down. It fixed
+none of semantic's two rank-1 misses and introduced nine (en-q04 to en-q07, ru-q04, ru-q05,
+ru-q08, ru-q11, kk-q06). Example, en-q04 "I paid twice by mistake, when will I get my money
+back?":
+
+- The relevant passage, "Refunds for overpaid invoices…", shares **no word** with the query
+  ("paid" ≠ "overpaid"), so full-text never returns it, and RRF gives it only 1/61.
+- Any-term matching plus stop words make full-text return almost every passage of the
+  collection, so other passages collect two mid-rank terms (≈ 2/63) and overtake it.
+
+The Russian payment queries ru-q01 to ru-q03 stayed at rank 1 under all three methods.
+
+**Interpretation:** this dataset is paraphrase-heavy by design: questions rarely repeat the
+passage's wording, which is where full-text is weakest and embeddings strongest. It has no
+queries built on exact identifiers (codes, numbers, names), where lexical search usually
+helps. The result says "plain equal-weight RRF with this noisy lexical branch does not help
+on paraphrased questions". It does not say "hybrid search is worse in general". Possible
+follow-ups, all to be measured before adoption: a stop-word-filtered or AND-leaning lexical
+query, weighted RRF, and lexical-heavy labeled queries.
+
+**Timing** (one run, median per query, CPU, embedding + SQL): semantic 13.7 ms,
+full_text 2.8 ms, hybrid 15.2 ms. Indicative only.
+
+```powershell
+# Reproduce (needs the migrated docmind_test database; see "Search quality evaluation")
+python -m app.evaluation.run_search_eval --models current --retrieval semantic,full_text,hybrid --k 1,3,5 --offline
+```
 
 ## Search quality evaluation
 
@@ -641,8 +887,13 @@ $env:DOCMIND_TEST_DATABASE_URL = ((Get-Content .env | Select-String '^DOCMIND_DA
 python -m app.evaluation.run_search_eval --models current,bge-m3 --k 1,3,5            # downloads missing models
 python -m app.evaluation.run_search_eval --models current,bge-m3 --k 1,3,5 --offline  # cached models only
 python -m app.evaluation.run_search_eval --models current                             # one model
+python -m app.evaluation.run_search_eval --models current --retrieval semantic,full_text,hybrid --offline
 ```
 
+- `--retrieval` (default `semantic`, which is `/search`) adds `full_text` and `hybrid`
+  (`/search/hybrid` modes) evaluated on the same embedded corpus. Semantic-only runs keep the
+  Phase 5 report file name, and other runs write `..._<methods>.json`, so they never
+  overwrite it.
 - `current` is `DOCMIND_EMBEDDING_MODEL`. Aliases: `e5-small`, `bge-m3`. Only models in
   `KNOWN_MODELS` are accepted.
 - `--offline` sets `HF_HUB_OFFLINE=1` before any Hugging Face import: no network requests, and a
@@ -762,7 +1013,8 @@ Remove-Item Env:DOCMIND_RUN_MODEL_TESTS
 ```
 
 To run the PostgreSQL integration tests (models, constraints, cascades, migrations, readiness,
-uploads, indexing pipeline, job queue, vector search ranking, isolation and timeouts):
+uploads, indexing pipeline, job queue, vector, full-text and hybrid search ranking,
+isolation, timeouts, the full-text migration on existing data):
 
 ```powershell
 docker compose up -d postgres
@@ -806,6 +1058,9 @@ SQLite would not prove the PostgreSQL schema works.
 - Text is extracted twice: in the upload request (validation, in FastAPI's threadpool) and again
   by the worker. The upload-time parse of a large PDF still takes a while.
 - No vector index: search is an exact scan (see [Semantic search API](#semantic-search-api)).
+- Hybrid search did **worse** than semantic search on the only labeled set (see
+  [Hybrid search](#hybrid-search-full-text--vector)); it is an opt-in endpoint, not the default.
+  Full-text search has no Kazakh stemming and keeps stop words in its exact-form channel.
 - The embedding model choice is still provisional: the evaluation favours bge-m3 by one or two
   queries out of 36, which is not enough evidence on its own. Kazakh is the weakest language
   for both models on that set.
