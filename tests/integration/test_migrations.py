@@ -90,3 +90,68 @@ def test_upgrade_enqueues_jobs_for_pending_documents(pg_engine: Engine) -> None:
         run_alembic(pg_engine, command.upgrade, "head")
         with pg_engine.begin() as conn:
             conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
+
+
+PHASE4_REVISION = "76cdab7f68eb"
+
+
+def test_full_text_upgrade_backfills_existing_chunks(pg_engine: Engine) -> None:
+    """Chunks indexed before Phase 6 become searchable without re-upload or re-index."""
+    run_alembic(pg_engine, command.downgrade, PHASE4_REVISION)
+    user_id, doc_id = uuid.uuid4(), uuid.uuid4()
+    vector = "[" + ",".join(["0.05"] * 384) + "]"
+    try:
+        with pg_engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO users (id, email) VALUES (:id, 'fts-mig@example.com')"),
+                {"id": user_id},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO documents (id, user_id, filename, content_type, file_size,"
+                    " content_hash, status) VALUES (:id, :uid, 'f.txt', 'text/plain', 1,"
+                    " :hash, 'ready')"
+                ),
+                {"id": doc_id, "uid": user_id, "hash": "a" * 64},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO document_chunks (id, document_id, chunk_index, content,"
+                    " char_start, char_end, token_count, embedding, embedding_model)"
+                    " VALUES (gen_random_uuid(), :doc, 0, 'Счета оплачиваются в течение"
+                    " десяти дней', 0, 37, 6, CAST(:v AS vector), 'm')"
+                ),
+                {"doc": doc_id, "v": vector},
+            )
+        run_alembic(pg_engine, command.upgrade, "head")
+        with pg_engine.connect() as conn:
+            matches = conn.scalar(
+                text(
+                    "SELECT count(*) FROM document_chunks WHERE document_id = :doc AND "
+                    "search_vector @@ plainto_tsquery('russian'::regconfig, 'счёт')"
+                ),
+                {"doc": doc_id},
+            )
+            index = conn.scalar(
+                text(
+                    "SELECT indexdef FROM pg_indexes "
+                    "WHERE indexname = 'ix_document_chunks_search_vector'"
+                )
+            )
+        assert matches == 1
+        assert "USING gin (search_vector)" in index
+    finally:
+        run_alembic(pg_engine, command.upgrade, "head")
+        with pg_engine.begin() as conn:
+            conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
+
+
+def test_full_text_downgrade_removes_column_and_index(pg_engine: Engine) -> None:
+    run_alembic(pg_engine, command.downgrade, PHASE4_REVISION)
+    try:
+        columns = {c["name"] for c in inspect(pg_engine).get_columns("document_chunks")}
+        indexes = {i["name"] for i in inspect(pg_engine).get_indexes("document_chunks")}
+        assert "search_vector" not in columns
+        assert "ix_document_chunks_search_vector" not in indexes
+    finally:
+        run_alembic(pg_engine, command.upgrade, "head")

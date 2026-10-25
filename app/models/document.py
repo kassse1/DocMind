@@ -3,8 +3,17 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    CheckConstraint,
+    Computed,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import (
@@ -22,6 +31,15 @@ if TYPE_CHECKING:
 # Size of document_chunks.embedding. It must match the configured embedding model
 # (multilingual-e5-small); switching to a model with another size needs a migration.
 EMBEDDING_DIMENSION = 384
+
+# Text-search configurations combined in document_chunks.search_vector. PostgreSQL has no
+# Kazakh configuration: "simple" keeps exact (lowercased) word forms for every language,
+# "russian" adds Russian stems for Cyrillic and English stems for Latin words, and drops
+# Russian/English stop words. Queries are built from the same configurations.
+FULL_TEXT_CONFIGS = ("simple", "russian")
+FULL_TEXT_VECTOR_SQL = " || ".join(
+    f"to_tsvector('{config}'::regconfig, content)" for config in FULL_TEXT_CONFIGS
+)
 
 
 class DocumentStatus(enum.StrEnum):
@@ -84,6 +102,7 @@ class DocumentChunk(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         CheckConstraint("page_number IS NULL OR page_number >= 1", name="page_number_positive"),
         CheckConstraint("char_start >= 0 AND char_end > char_start", name="char_range_valid"),
         CheckConstraint("token_count >= 0", name="token_count_non_negative"),
+        Index("ix_document_chunks_search_vector", "search_vector", postgresql_using="gin"),
     )
 
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
@@ -105,6 +124,12 @@ class DocumentChunk(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     # "metadata" is reserved on declarative classes, so the attribute is named differently.
     chunk_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, default=dict, server_default="{}"
+    )
+    # Full-text index of `content`, computed by PostgreSQL on every insert and update
+    # (generated column), so it can never drift from the text. Never written by the app;
+    # deferred because only full-text queries need it.
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR, Computed(FULL_TEXT_VECTOR_SQL, persisted=True), deferred=True
     )
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
