@@ -48,6 +48,7 @@ addopts = "-ra"
 markers = [
     "integration: needs a real PostgreSQL database (set DOCMIND_TEST_DATABASE_URL)",
     "model: loads the real embedding model (set DOCMIND_RUN_MODEL_TESTS=1)",
+    "llm: calls a real local generation model via Ollama (set DOCMIND_RUN_LLM_TESTS=1)",
 ]
 
 [tool.ruff]
