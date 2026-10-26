@@ -16,6 +16,7 @@ import uuid
 
 from app.core.config import Settings, get_settings
 from app.core.database import create_db_engine, create_session_factory
+from app.core.logging import configure_logging
 from app.embeddings.factory import create_embedder
 from app.ingestion.storage import FileStorage
 from app.models import EMBEDDING_DIMENSION, Document
@@ -77,9 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = get_settings()
-    logging.basicConfig(
-        level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging(settings.log_level, settings.log_format, "worker")
     if args.command == "reindex":
         return reindex(settings, args.document_id)
     try:

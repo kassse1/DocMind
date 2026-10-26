@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # json = one JSON object per line (containers, log shippers); text = human-readable.
+    log_format: Literal["json", "text"] = "json"
 
     # SecretStr keeps the password out of repr(), logs and tracebacks.
     # Placeholder for local development only; set DOCMIND_DATABASE_URL in .env or the environment.

@@ -14,6 +14,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import create_db_engine, create_session_factory
 from app.core.errors import register_exception_handlers
 from app.core.http_security import SecurityHeadersMiddleware
+from app.core.logging import RequestContextMiddleware, configure_logging
 from app.core.security import TokenSettings
 from app.embeddings.factory import create_embedder
 from app.ingestion.storage import FileStorage
@@ -53,7 +54,7 @@ def _token_settings(settings: Settings) -> TokenSettings:
 def create_app(settings: Settings | None = None) -> FastAPI:
     """App factory: lets tests build isolated apps with custom settings."""
     settings = settings or get_settings()
-    logging.basicConfig(level=settings.log_level)
+    configure_logging(settings.log_level, settings.log_format, "api")
 
     docs = settings.docs_on
     app = FastAPI(
@@ -94,6 +95,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         SecurityHeadersMiddleware, api_prefix=settings.api_v1_prefix, hsts=settings.hsts_enabled
     )
+    # Outermost: every response, including middleware rejections, gets an id and a log line.
+    app.add_middleware(RequestContextMiddleware, api_prefix=settings.api_v1_prefix)
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     return app
