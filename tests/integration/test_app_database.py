@@ -53,7 +53,7 @@ def test_readiness_ok_with_real_database(client: TestClient) -> None:
     response = client.get("/api/v1/health/ready")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "checks": {"database": "ok"}}
+    assert response.json() == {"status": "ready", "checks": {"database": "ok", "schema": "ok"}}
 
 
 def test_request_session_never_auto_commits(client: TestClient, pg_engine: Engine) -> None:
