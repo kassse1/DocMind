@@ -32,6 +32,11 @@ Work in progress.
   noise and the support check missed most unsupported answers. See
   [Phase 7.2](#phase-72-context-selection-and-support-check).
 
+- **Phase 8 (done, pending review):** email/password accounts (Argon2id), short-lived JWT
+  access tokens, every data endpoint behind `Authorization: Bearer`, owner-scoped document
+  list/detail/delete, and a non-destructive migration of the single-user data. See
+  [Authentication and multi-user isolation](#authentication-and-multi-user-isolation).
+
 ## Quick start (Windows PowerShell)
 
 ```powershell
@@ -70,7 +75,9 @@ App settings use the `DOCMIND_` prefix and are read from the environment or `.en
 | `DOCMIND_MAX_UPLOAD_BYTES` | `10485760` (10 MiB) | Maximum file size |
 | `DOCMIND_MAX_PDF_PAGES` | `2000` | PDFs with more pages are rejected |
 | `DOCMIND_MAX_DOCX_UNCOMPRESSED_BYTES` | `52428800` (50 MiB) | Zip-bomb guard for DOCX archives |
-| `DOCMIND_DEV_USER_EMAIL` | `dev@docmind.local` | Development-only owner of uploads (see below) |
+| `DOCMIND_JWT_SECRET_KEY` | unset | HS256 signing key, at least 32 bytes; **required in prod**. Unset in dev/test = random per-process key |
+| `DOCMIND_JWT_ISSUER` / `DOCMIND_JWT_AUDIENCE` | `docmind` / `docmind-api` | `iss` / `aud` claims written and required |
+| `DOCMIND_ACCESS_TOKEN_TTL_MINUTES` | `15` | Access token lifetime (1..1440) |
 | `DOCMIND_EMBEDDING_BACKEND` | `sentence-transformers` | `fake` = deterministic, meaningless vectors (tests/CI; refused in prod) |
 | `DOCMIND_EMBEDDING_MODEL` | `intfloat/multilingual-e5-small` | Must be listed in `app/embeddings/base.py` (`KNOWN_MODELS`) |
 | `DOCMIND_EMBEDDING_DEVICE` | unset (auto) | e.g. `cpu`, `cuda`; unset lets sentence-transformers choose |
@@ -249,6 +256,138 @@ Design notes:
 - **Timestamps** are `timestamptz` with `DEFAULT now()`. `updated_at` is refreshed by the ORM on
   updates; raw SQL `UPDATE`s must set it themselves.
 
+## Authentication and multi-user isolation
+
+Every endpoint that touches user data requires `Authorization: Bearer <access token>`. The
+only public routes are `GET /health`, `GET /health/ready`, `POST /auth/register` and
+`POST /auth/login` (plus `/docs` and `/openapi.json` as in earlier phases). A test checks the
+OpenAPI schema so that any new route without authentication fails the build.
+
+```text
+POST /auth/register {email, password} ──► Argon2id hash ──► users row ──► 201 {id, email, created_at}
+POST /auth/login    {email, password} ──► verify ──► signed JWT (HS256, 15 min) ──► 200 {access_token}
+any protected route ──► Bearer token ──► signature, alg, exp, iat, iss, aud, typ, sub
+                    ──► load user (must exist, be active, have a password) ──► User
+                    ──► services scope every query to user.id (documents, chunks, search, /ask)
+```
+
+Identity has exactly one source: the validated token. No route accepts a user id in the
+path, query, body or headers (request bodies reject unknown fields; an `X-User-ID` header or a
+`user_id` query parameter is ignored, and tests check both).
+
+### Register, log in, call the API (PowerShell)
+
+```powershell
+$api = "http://127.0.0.1:8001/api/v1"
+$cred = @{ email = "alice@example.com"; password = Read-Host "Password (12+ characters)" } | ConvertTo-Json
+Invoke-RestMethod -Method Post "$api/auth/register" -ContentType "application/json" -Body $cred
+$token = (Invoke-RestMethod -Method Post "$api/auth/login" -ContentType "application/json" -Body $cred).access_token
+$headers = @{ Authorization = "Bearer $token" }
+Invoke-RestMethod "$api/auth/me" -Headers $headers          # {id, email, created_at}
+Invoke-RestMethod "$api/documents" -Headers $headers        # only your documents
+```
+
+Tokens expire after `DOCMIND_ACCESS_TOKEN_TTL_MINUTES` (15); log in again for a new one. Do not
+paste tokens into tickets or logs: anyone holding one acts as you until it expires.
+
+| Endpoint | Success | Errors |
+|---|---|---|
+| `POST /auth/register` | `201` public profile (never the hash) | `409 email_already_registered`, `422` invalid email, password outside 12..1024 characters, extra fields |
+| `POST /auth/login` | `200 {access_token, token_type: "bearer", expires_in}` | `401 invalid_credentials`: one response for unknown email, wrong password, inactive and password-less accounts |
+| `GET /auth/me` | `200` public profile | `401` |
+| any protected route | as documented | `401 authentication_required` (no or non-Bearer credentials), `401 invalid_token` (anything wrong with the token, or the user is gone/inactive); both with `WWW-Authenticate: Bearer` |
+
+### Passwords and tokens
+
+- **Passwords**: Argon2id via argon2-cffi, RFC 9106 low-memory profile (m = 64 MiB, t = 3,
+  p = 4), random salt per hash, Unicode NFC normalization, 12 to 1024 characters of any kind
+  (long passphrases welcome; the upper bound caps per-request work). Rehashed on login when
+  the parameters change. A login for an unknown account still runs one Argon2 verification,
+  so response time does not reveal whether the email exists.
+- **Tokens**: PyJWT, HS256 only (explicit allowlist, so `alg: none` and algorithm confusion
+  are rejected), claims `sub` (user id), `iat`, `exp`, `iss`, `aud`, `typ = "access"`, `jti`,
+  all required on decode, UTC, 10 s clock-skew leeway. Tested rejections: expired, tampered,
+  wrong key, HS512, `alg: none`, wrong issuer/audience/type, non-UUID or missing subject,
+  missing claims, deleted, inactive or password-less user.
+- **Key management**: `DOCMIND_JWT_SECRET_KEY` must be at least 32 bytes and is required when
+  `DOCMIND_ENVIRONMENT=prod` (the app refuses to start without it). In dev/test an unset key is
+  replaced by a random per-process key with a warning, never by a fixed default, so tokens
+  stop working at every restart. Rotating the key invalidates every issued token. Keep it in
+  `.env` or the environment only. Generate one in Windows PowerShell 5.1:
+
+  ```powershell
+  $b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+  [Convert]::ToBase64String($b)
+  ```
+- Logs record user ids and outcomes (`Registered user=...`, `Login failed`, `Rejected access
+  token: ExpiredSignatureError`), never emails, passwords, hashes, tokens or Authorization
+  headers (checked by tests and on a live run).
+
+### Migration and legacy data (revision `3f1c2a9d7e45`)
+
+`users` gains `password_hash` (NULL allowed), `is_active` (default true) and a CHECK that the
+email is `lower(btrim(email))`, so the existing unique constraint also rejects case variants.
+Nothing else changes: document, chunk, embedding, search-vector and job rows keep their ids and
+owners.
+
+Existing single-user data: accounts created before Phase 8 (here `dev@docmind.local`, owner of
+the documents uploaded so far) keep their documents and get **no password**. Such an account
+cannot log in, and registering the same email is refused, so nobody can take it over by signing
+up and nothing is reassigned to whoever registers first. The operator claims it on the server:
+
+```powershell
+python -m app.admin set-password --email dev@docmind.local   # hidden prompt, asked twice
+python -m app.admin deactivate --email someone@example.com   # existing tokens stop working
+python -m app.admin activate --email someone@example.com
+```
+
+Upgrading an existing database (what was done for the dev database):
+
+```powershell
+docker exec docmind-postgres pg_dump -U docmind -d docmind -Fc -f /tmp/pre_auth.dump
+docker cp docmind-postgres:/tmp/pre_auth.dump "$env:USERPROFILE\.docmind\backups\docmind_pre_3f1c2a9d7e45.dump"
+alembic upgrade 3f1c2a9d7e45 --sql     # read the DDL first
+alembic upgrade head
+docker exec docmind-postgres psql -U docmind -d docmind -c "select email, password_hash is null as unclaimed, is_active from users"
+```
+
+The upgrade refuses to run if any stored email is not normalized (it never merges or rewrites
+accounts). It was first run on a disposable restore of the dev backup: upgrade, downgrade and
+upgrade again with identical row counts and identical checksums of documents, chunk text,
+embeddings and search vectors. Downgrade drops the new columns, so password hashes are lost.
+
+### Isolation guarantees
+
+- Every document query includes `documents.user_id = <token user>`: list, detail, delete,
+  upload duplicates, vector search, full-text search, both hybrid branches, and the `/ask`
+  retrieval. A foreign or nonexistent document id gives the same `404 document_not_found`;
+  a `document_ids` list that mixes owned and foreign ids fails as a whole before any model
+  call, listing the ids that were not found (a foreign id looks exactly like a missing one).
+- RAG prompts (answer and support check) are built only from the caller's chunks: the
+  end-to-end tests record every prompt and check that the other user's text never appears.
+- The worker indexes by document id and never changes ownership; deleting a document
+  cascades its chunks and jobs and removes the stored file.
+- Verified by `tests/integration/test_multiuser_isolation.py` (Alice and Bob register, log
+  in, upload, get indexed by the real worker, then list, read, delete, search, hybrid-search
+  and ask) and by a live run on port 8001 with the real model.
+
+### Security limitations
+
+JWT authentication alone does not make the service production-secure. Not implemented:
+
+- no refresh tokens, logout or token revocation: a stolen token works until it expires
+  (15 minutes by default); deactivating the account or rotating the key are the only kill
+  switches;
+- no password reset, email verification or MFA; registration is open to anyone who can reach
+  the server, and a 409 on registration reveals that an email is registered (login does not);
+- no rate limiting or lockout against password guessing; put the API behind a reverse proxy
+  that rate-limits `/auth/login` before exposing it;
+- HS256 means every process that verifies tokens can also mint them; separate signing and
+  verification would need an asymmetric key (RS256/EdDSA);
+- no TLS in the app itself: run it only on localhost or behind HTTPS;
+- no roles or admin API; operator actions go through `python -m app.admin` on the server;
+- `/docs` and `/openapi.json` stay public as in earlier phases.
+
 ## Documents API
 
 ### Upload a document
@@ -257,11 +396,17 @@ Design notes:
 
 ```powershell
 # Windows PowerShell 5.1: use curl.exe (bundled with Windows 10+), not the "curl" alias
-curl.exe -s -F "file=@C:\path\to\report.pdf" http://127.0.0.1:8000/api/v1/documents
+curl.exe -s -H "Authorization: Bearer $token" -F "file=@C:\path\to\report.pdf" `
+  http://127.0.0.1:8000/api/v1/documents
 
-# PowerShell 7+ alternative
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/documents `
+# PowerShell 7+ alternative ($headers: see "Authentication")
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/documents -Headers $headers `
   -Form @{ file = Get-Item C:\path\to\report.pdf }
+
+# Your documents (newest first), one document, delete one (204):
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/documents -Headers $headers
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/documents/<document-uuid> -Headers $headers
+Invoke-RestMethod -Method Delete http://127.0.0.1:8000/api/v1/documents/<document-uuid> -Headers $headers
 ```
 
 Response `201 Created` (a real response for a generated 3-page sample PDF):
@@ -301,7 +446,7 @@ All errors use the standard envelope `{"error": {"code", "message", "details"}}`
 | HTTP | `code` | When |
 |---|---|---|
 | 400 | `empty_file` | Zero-byte file |
-| 401 | `authentication_required` | `DOCMIND_ENVIRONMENT=prod` (no auth yet, see below) |
+| 401 | `authentication_required` / `invalid_token` | Missing, malformed, expired or otherwise invalid Bearer token |
 | 409 | `duplicate_document` | Same bytes already uploaded by this user; `details.document_id` is the existing one |
 | 413 | `payload_too_large` | Request body over the limit, rejected while streaming |
 | 413 | `file_too_large` | File over `DOCMIND_MAX_UPLOAD_BYTES` |
@@ -343,9 +488,8 @@ and a better parser or normalizer can be applied later without asking users to u
 Extracted text is not persisted in Phase 3, so no schema change was needed. On-disk names come
 only from server-generated UUIDs; the client filename is sanitized and stored for display only.
 
-**User identity (development only).** Authentication arrives in Phase 8. Until then, every
-upload belongs to one user, `DOCMIND_DEV_USER_EMAIL`, created on first use. With
-`DOCMIND_ENVIRONMENT=prod`, document endpoints return 401 instead of sharing that account.
+**User identity.** Every upload belongs to the user of the Bearer token (Phase 8); no
+request field can name another owner.
 
 **Logging.** Logs contain the document id, user id, type, size and rejection codes only. They
 never contain filenames, document text or server paths.
@@ -512,8 +656,9 @@ worker on the **first** search request (a few seconds; the very first run may do
 Without the extra, search returns `503 embedding_unavailable` and everything else still works.
 
 ```powershell
+$headers = @{ Authorization = "Bearer $token" }   # see "Authentication"
 $body = @{ query = "When do I have to pay the invoice?"; top_k = 3 } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/search `
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/search -Headers $headers `
   -ContentType "application/json; charset=utf-8" `
   -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) | ConvertTo-Json -Depth 5
 
@@ -581,7 +726,7 @@ including while documents are still being indexed.
 
 | HTTP | `code` | When |
 |---|---|---|
-| 401 | `authentication_required` | `DOCMIND_ENVIRONMENT=prod` (no auth yet) |
+| 401 | `authentication_required` / `invalid_token` | Missing or invalid Bearer token |
 | 404 | `document_not_found` | An id in `document_ids` does not exist **or belongs to another user** (same answer, so ids of others' documents cannot be probed); `details.document_ids` lists them |
 | 405 | `method_not_allowed` | `GET` (the query is sent in the body so it stays out of URLs and access logs) |
 | 422 | `validation_error` | Missing/empty/too long query, `top_k` out of 1..20, bad UUID, unknown field, malformed JSON. The rejected input is not echoed back |
@@ -591,7 +736,7 @@ including while documents are still being indexed.
 
 ### How a search runs
 
-1. Validate the request (Pydantic), resolve the current user (development user until Phase 8).
+1. Validate the request (Pydantic), resolve the current user from the Bearer token.
 2. If `document_ids` is given, check they all belong to the user, **before** spending a model call.
 3. Embed the query with the shared embedder (`query: ` prefix, normalized, dimension checked).
 4. Set a transaction-local `statement_timeout`, then run one parameterized query in PostgreSQL:
@@ -636,8 +781,9 @@ so semantic search stays the default and hybrid is opt-in.
 ### Request and response
 
 ```powershell
+$headers = @{ Authorization = "Bearer $token" }   # see "Authentication"
 $body = @{ query = "late fee for an unpaid invoice"; top_k = 2 } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/search/hybrid `
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/search/hybrid -Headers $headers `
   -ContentType "application/json; charset=utf-8" `
   -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) | ConvertTo-Json -Depth 5
 
@@ -891,8 +1037,9 @@ model filter, timeouts and errors.
 $env:DOCMIND_GENERATION_BACKEND = "openai-compatible"   # or "fake" to try the pipeline offline
 uvicorn app.main:app
 
+$headers = @{ Authorization = "Bearer $token" }   # see "Authentication"
 $body = @{ question = "When do I have to pay an invoice?"; top_k = 5 } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/ask `
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/ask -Headers $headers `
   -ContentType "application/json; charset=utf-8" `
   -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) | ConvertTo-Json -Depth 6
 ```
@@ -1030,7 +1177,7 @@ Failures that are **not** abstentions, because the system failed rather than dec
 | 503 | `generation_unavailable` | Generation not configured (`DOCMIND_GENERATION_BACKEND=disabled`, checked before any DB work), provider unreachable, timeout, HTTP error, a body that is not a chat completion, the configured tokenizer cannot load, or (with the exact tokenizer) the server reports fewer prompt tokens than were sent, i.e. it truncated the prompt |
 | 503 | `embedding_unavailable` / `database_unavailable` | As in `/search` (includes the statement timeout) |
 | 404 | `document_not_found` | A `document_ids` entry is missing **or belongs to someone else** (same response) |
-| 401 | `authentication_required` | `DOCMIND_ENVIRONMENT=prod` until Phase 8 |
+| 401 | `authentication_required` / `invalid_token` | Missing or invalid Bearer token |
 | 422 | `validation_error` | Invalid request |
 
 ### Context construction and token budget
@@ -1212,8 +1359,9 @@ taken from documents; URLs inside documents are never fetched.
 
 ### Security and privacy limitations
 
-- Single development user until Phase 8; ownership isolation is enforced and tested with two
-  users, but nobody authenticates yet.
+- Ownership isolation is enforced in SQL and tested end to end with two authenticated users
+  (Phase 8); see the limitations of the authentication itself in
+  [Authentication and multi-user isolation](#authentication-and-multi-user-isolation).
 - A hosted provider (`openai-compatible` with a remote URL) receives the question and the
   retrieved passages. Keep it local for private documents.
 - The answer is model output: clients must render it as text, never as HTML or Markdown that
@@ -1735,6 +1883,11 @@ pytest -v                # unit tests; integration and real-model tests are SKIP
 ruff check .
 ```
 
+Authentication is covered by `tests/test_security.py` (hashing, the JWT rejection matrix,
+the route protection audit) and, with the test database, `tests/integration/test_auth_api.py`
+and `tests/integration/test_multiuser_isolation.py`. Tests obtain identity only through real
+signed tokens (`tests/conftest.py::bearer`, `tests/integration/conftest.py::authenticate`).
+
 Ordinary tests never download a model or touch the network: they use `FakeEmbedder`
 (deterministic SHA-256-seeded vectors), simple word or character tokenizers, `FakeGenerator`
 (scripted replies) and `httpx.MockTransport` for the OpenAI-compatible client. No test calls
@@ -1793,10 +1946,9 @@ SQLite would not prove the PostgreSQL schema works.
 
 ## Limitations (current phase)
 
-- No authentication yet. `users` has no password column; authentication arrives in
-  Phase 8. All uploads, searches and questions act as the development user. Search and
-  `/ask` already filter by owner, so per-user isolation only needs real authentication
-  behind `get_current_user`.
+- Authentication is access tokens only: no refresh tokens, logout or token revocation, no
+  password reset or email verification, no rate limiting of login attempts, no MFA. See
+  [Security limitations](#security-limitations).
 - RAG quality is measured only with one small local model (qwen2.5:3b-instruct) on 42
   synthetic questions and 10 scenarios, single runs, one manual reviewer. Grounding checks
   verify citation identity, quotes and numbers, not entailment (see
