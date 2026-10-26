@@ -107,9 +107,12 @@ def parse_dataset(raw: dict, sha256: str = "") -> EvalDataset:
     return dataset
 
 
-def validate(dataset: EvalDataset, label_counts: list[int] | None = None) -> None:
+def validate(
+    dataset: EvalDataset, label_counts: list[int] | None = None, require_queries: bool = True
+) -> None:
     _require(bool(dataset.documents), "Dataset has no documents")
-    _require(bool(dataset.queries), "Dataset has no queries")
+    # A RAG set with its own corpus has documents but no search queries.
+    _require(bool(dataset.queries) or not require_queries, "Dataset has no queries")
     _unique([d.id for d in dataset.documents], "document")
     _unique([p.id for d in dataset.documents for p in d.passages], "passage")
     _unique([q.id for q in dataset.queries], "query")

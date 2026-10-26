@@ -41,7 +41,12 @@ from app.core.config import Settings
 from app.embeddings.base import KNOWN_MODELS, Embedder
 from app.embeddings.factory import create_embedder
 from app.evaluation.dataset import LANGUAGES
-from app.evaluation.rag_dataset import DEFAULT_RAG_DATASET, RagDataset, load_rag_dataset
+from app.evaluation.rag_dataset import (
+    DEFAULT_RAG_DATASET,
+    RagDataset,
+    RagQuestion,
+    load_rag_dataset,
+)
 from app.evaluation.run_search_eval import (
     TEST_DB_ENV,
     EvaluationError,
@@ -64,7 +69,9 @@ from app.rag.generation import (
 from app.rag.grounding import GROUNDING_POLICY, Abstention, locate_quote, parse_reply
 from app.rag.tokens import TokenCounter, create_token_counter
 from app.schemas.ask import AskRequest
+from app.schemas.search import MAX_TOP_K, SearchRequest
 from app.services import ask as ask_service
+from app.services import search as search_service
 
 logger = logging.getLogger("app.evaluation")
 
@@ -294,11 +301,28 @@ def evaluate(
         owner = _populate(session, corpus, embedder, settings)
         session.commit()
 
+        def scope(question: RagQuestion) -> list[uuid.UUID] | None:
+            # "all": every document of the owner, mixed languages, like a real library.
+            if dataset.question_scope == "all":
+                return None
+            return docs_by_language[question.language]
+
         for question in dataset.questions:
+            # Rank of the first gold passage in plain semantic search (depth MAX_TOP_K),
+            # before any context selection: separates retrieval from selection failures.
+            ranked = search_service.search(
+                session, embedder, settings, owner,
+                SearchRequest(query=question.text, top_k=MAX_TOP_K, document_ids=scope(question)),
+            )
+            session.rollback()
+            ranks = [
+                i for i, h in enumerate(ranked, 1)
+                if passage_of[(h.document_id, h.chunk_index)] in question.gold
+            ]
             before = len(recorder.replies)
             outcome = _ask(
                 session, embedder, recorder, counter, settings, owner, question.text, top_k,
-                docs_by_language[question.language],
+                scope(question),
             )
             context = outcome.context
             in_context = (
@@ -327,6 +351,7 @@ def evaluate(
                     "gold": sorted(question.gold),
                     "context": sorted(in_context),
                     "gold_in_context": bool(question.gold & in_context),
+                    "gold_rank": ranks[0] if ranks else None,
                     "cited": sorted(cited),
                     "gold_cited": bool(question.gold & cited),
                     "cited_injected": bool(cited & injected_passages),
@@ -354,7 +379,7 @@ def evaluate(
             question = questions[case.question]
             outcome = _ask(
                 session, embedder, FakeGenerator(scripted_reply(case.id)), counter, settings,
-                owner, question.text, top_k, docs_by_language[question.language],
+                owner, question.text, top_k, scope(question),
             )
             got = (
                 outcome.result.reason.value
@@ -437,7 +462,9 @@ def run(
         "settings": {
             "top_k": top_k,
             "retrieval": "semantic (app.services.search.search, POST /api/v1/search)",
-            "query_scope": "documents of the question's language (document_ids filter)",
+            "query_scope": "all documents of the owner"
+            if dataset.question_scope == "all"
+            else "documents of the question's language (document_ids filter)",
             "embedding_model": embedder.model_name,
             "context_token_budget": settings.rag_context_token_budget,
             "generation_context_window": settings.generation_context_window,

@@ -10,6 +10,14 @@ Labeling rules:
   model's instructions; expected: the real answer, without the injected claim (forbidden).
 - injected: the injected passages of an injection question. Whether they reach the
   context is measured, not assumed: an injection that is never retrieved tests nothing.
+- cross_lingual: answerable from a passage in another language than the question
+  (e.g. a Russian question about an English rule); only such questions may have gold
+  passages in another language.
+- question_scope (whole set): "language" asks each question within the documents of its
+  language (rag_eval_v1, holdout); "all" asks it over every document of the owner, mixing
+  documents and languages in the context as a real user's library does.
+- corpus: a search-eval file next to the set, or null when all documents are listed in
+  extra_documents.
 - answer_contains / forbidden are lexical proxies (any of the strings, case-insensitive),
   not a judgement of answer correctness.
 Citation cases are scripted model replies for the validator; they are not model behavior.
@@ -33,8 +41,9 @@ from app.evaluation.dataset import (
 from app.rag.grounding import AbstentionReason
 
 DEFAULT_RAG_DATASET = Path(__file__).parent / "datasets" / "rag_eval_v1.json"
-CATEGORIES = ("answerable", "unanswerable", "misleading", "injection")
-ANSWER_EXPECTED = frozenset({"answerable", "injection"})
+CATEGORIES = ("answerable", "unanswerable", "misleading", "injection", "cross_lingual")
+ANSWER_EXPECTED = frozenset({"answerable", "injection", "cross_lingual"})
+QUESTION_SCOPES = ("language", "all")
 CITATION_CASE_KINDS = (
     "valid-exact-quote",
     "duplicate-citations",
@@ -84,6 +93,7 @@ class RagDataset:
     corpus: EvalDataset
     questions: tuple[RagQuestion, ...]
     citation_cases: tuple[CitationCase, ...]
+    question_scope: str = "language"
 
 
 def _require(condition: bool, message: str) -> None:
@@ -122,6 +132,7 @@ def parse_rag_dataset(raw: dict, corpus: EvalDataset, sha256: str = "") -> RagDa
             CitationCase(c["id"], c["question"], c["expect"]) for c in raw["citation_cases"]
         )
         name, version = raw["name"], raw["version"]
+        scope = raw.get("question_scope", "language")
     except (KeyError, TypeError) as exc:
         raise DatasetError(f"Malformed RAG dataset: missing or invalid field {exc}") from None
 
@@ -129,7 +140,8 @@ def parse_rag_dataset(raw: dict, corpus: EvalDataset, sha256: str = "") -> RagDa
     combined = EvalDataset(
         corpus.name, corpus.version, corpus.sha256, corpus.documents + extra, corpus.queries
     )
-    validate(combined)
+    validate(combined, require_queries=False)
+    _require(scope in QUESTION_SCOPES, f"Unknown question_scope {scope!r}")
     passages = combined.passages()
 
     ids = [q.id for q in questions]
@@ -168,7 +180,14 @@ def parse_rag_dataset(raw: dict, corpus: EvalDataset, sha256: str = "") -> RagDa
         ]
         _require(not clashes, f"Question {q.id}: forbidden strings occur in gold {clashes}")
         foreign = sorted(p for p in q.gold if passages[p].language != q.language)
-        _require(not foreign, f"Question {q.id}: gold passages in another language {foreign}")
+        if q.category == "cross_lingual":
+            _require(bool(foreign), f"Question {q.id}: cross_lingual gold must be another language")
+            # Asked within its own language, a cross-lingual question could never be answered.
+            _require(scope == "all", f"Question {q.id}: cross_lingual needs question_scope 'all'")
+        else:
+            _require(
+                not foreign, f"Question {q.id}: gold passages in another language {foreign}"
+            )
 
     valid_outcomes = {"answered", *(r.value for r in AbstentionReason)}
     question_ids = set(ids)
@@ -176,7 +195,7 @@ def parse_rag_dataset(raw: dict, corpus: EvalDataset, sha256: str = "") -> RagDa
         _require(case.id in CITATION_CASE_KINDS, f"Citation case {case.id}: unknown kind")
         _require(case.question in question_ids, f"Citation case {case.id}: unknown question")
         _require(case.expect in valid_outcomes, f"Citation case {case.id}: unknown outcome")
-    return RagDataset(name, version, sha256, combined, questions, cases)
+    return RagDataset(name, version, sha256, combined, questions, cases, scope)
 
 
 def load_rag_dataset(path: Path = DEFAULT_RAG_DATASET) -> RagDataset:
@@ -186,9 +205,12 @@ def load_rag_dataset(path: Path = DEFAULT_RAG_DATASET) -> RagDataset:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise DatasetError(f"RAG dataset is not valid UTF-8 JSON: {exc}") from None
     corpus_name = raw.get("corpus")
-    _require(
-        isinstance(corpus_name, str) and Path(corpus_name).name == corpus_name,
-        "corpus must be a file name next to the RAG dataset",
-    )
-    corpus = load_dataset(path.parent / corpus_name)
+    if corpus_name is None:
+        corpus = EvalDataset(raw.get("name", ""), raw.get("version", ""), "", (), ())
+    else:
+        _require(
+            isinstance(corpus_name, str) and Path(corpus_name).name == corpus_name,
+            "corpus must be null or a file name next to the RAG dataset",
+        )
+        corpus = load_dataset(path.parent / corpus_name)
     return parse_rag_dataset(raw, corpus, hashlib.sha256(data).hexdigest())

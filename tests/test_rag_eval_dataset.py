@@ -154,3 +154,55 @@ def test_holdout_set_is_disjoint_from_the_dev_set_and_shares_its_corpus() -> Non
     assert {(q.language, q.category) for q in holdout.questions} == {
         (q.language, q.category) for q in dev.questions
     }
+
+
+CHALLENGE = DEFAULT_RAG_DATASET.parent / "rag_challenge_v1.json"
+CHALLENGE_RAW = json.loads(CHALLENGE.read_text(encoding="utf-8"))
+NO_CORPUS = load_rag_dataset(CHALLENGE).corpus.__class__("", "", "", (), ())
+
+
+def test_challenge_set_has_its_own_corpus_and_mixed_scope() -> None:
+    challenge = load_rag_dataset(CHALLENGE)
+    assert challenge.question_scope == "all"
+    assert load_rag_dataset().question_scope == "language"
+    # Independent of the search corpus: no shared passages, no shared question texts.
+    assert challenge.corpus.passages().keys().isdisjoint(load_rag_dataset().corpus.passages())
+    dev_and_holdout = {q.text for q in load_rag_dataset().questions} | {
+        q.text for q in load_rag_dataset(DEFAULT_RAG_DATASET.parent / "rag_eval_holdout_v1.json")
+        .questions
+    }
+    assert dev_and_holdout.isdisjoint(q.text for q in challenge.questions)
+    for language in ("en", "ru", "kk"):
+        for expects in (True, False):
+            assert any(
+                q.language == language and q.expects_answer is expects
+                for q in challenge.questions
+            )
+    assert any(q.category == "cross_lingual" for q in challenge.questions)
+
+
+def _challenge_mutated(change) -> dict:
+    raw = copy.deepcopy(CHALLENGE_RAW)
+    change(raw)
+    return raw
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        # Cross-lingual gold must really be in another language ...
+        lambda r: next(q for q in r["questions"] if q["id"] == "c-en-11").update(
+            gold=["en-gym-01"]
+        ),
+        # ... and only makes sense when every document is in scope.
+        lambda r: r.update(question_scope="language"),
+        lambda r: r.update(question_scope="everything"),
+        # Other categories still may not have foreign-language gold.
+        lambda r: next(q for q in r["questions"] if q["id"] == "c-en-01").update(
+            gold=["kk-clinic-03"]
+        ),
+    ],
+)
+def test_challenge_label_rules(change) -> None:
+    with pytest.raises(DatasetError):
+        parse_rag_dataset(_challenge_mutated(change), NO_CORPUS)
