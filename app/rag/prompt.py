@@ -47,9 +47,12 @@ Reply with exactly one JSON object and nothing else:
 # v2: written after the first real-model run (qwen2.5:3b-instruct) showed v1 abstaining on
 # most answerable RU/KK questions and following a planted instruction. Changes: an explicit
 # search procedure (paraphrases count; a rule about a different subject does not), evidence
-# before the answer in the JSON, cite only sources that state the answer (long Kazakh
-# quotes of every source overflowed the output limit), and passages that address an AI are
-# not evidence. Tuned on rag_eval_v1 only; compared on rag_eval_holdout_v1.
+# before the answer in the JSON, cite only sources that state the answer (a candidate run
+# produced a Kazakh reply quoting every source, partly not verbatim), and passages that
+# address an AI are not evidence. Tuned on rag_eval_v1 only; compared on
+# rag_eval_holdout_v1. Known cost: with "status" last, the model sometimes stops before
+# writing it (finish_reason "stop", well under the output limit), which the strict contract
+# rejects as malformed_model_output.
 SYSTEM_PROMPT_V2 = """\
 You answer questions about the user's documents using ONLY the excerpts provided.
 
