@@ -98,6 +98,8 @@ class Abstention:
 _FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE)
 # Only bracketed markers ("[S2]"): a bare "S3" may be part of a name in the answer.
 _SOURCE_MARKER = re.compile(r"\[S(\d+)\]")
+# A backslash followed by n, r or t, as two characters (a JSON escape copied literally).
+_ESCAPED_WHITESPACE = re.compile(r"\\[nrt]")
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 # Quotation marks and ellipses a model tends to wrap around a quote.
 _QUOTE_WRAPPERS = "\"'`«»“”„‘’ \t\r\n"
@@ -129,14 +131,22 @@ def _clean_quote(quote: str) -> str:
 
 def locate_quote(quote: str, passage: str) -> tuple[int, int] | None:
     """Span of the quote in the passage: exact first, then ignoring case and runs of
-    whitespace (PDF line breaks, double spaces). Returns None if it is not there."""
+    whitespace (PDF line breaks, double spaces). Returns None if it is not there.
+
+    In the tolerant step a JSON escape copied literally (backslash + n, r or t) also counts
+    as whitespace: the model reads passages as JSON, where a line break is written as those
+    two characters, and qwen2.5:3b-instruct copies them that way when a quote spans a
+    paragraph break. Words must still match exactly."""
     quote = _clean_quote(quote)
     if len("".join(quote.split())) < MIN_QUOTE_CHARS:
         return None
     start = passage.find(quote)
     if start >= 0:
         return start, start + len(quote)
-    pattern = r"\s+".join(re.escape(word) for word in quote.split())
+    words = _ESCAPED_WHITESPACE.sub(" ", quote).split()
+    if len("".join(words)) < MIN_QUOTE_CHARS:
+        return None
+    pattern = r"\s+".join(re.escape(word) for word in words)
     match = re.search(pattern, passage, re.IGNORECASE)
     return match.span() if match else None
 

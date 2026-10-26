@@ -236,3 +236,28 @@ def test_empty_context_can_never_produce_an_answer() -> None:
     assert evaluate_reply(reply("30 days.", ("S1", "within 30 days")), empty) == Abstention(
         AbstentionReason.INVALID_CITATION
     )
+
+
+PARAGRAPHS = "Booking policy\n\nBookings need a deposit of 25% of the fee."
+
+
+def test_json_escaped_line_break_in_a_quote_counts_as_whitespace() -> None:
+    # Observed with qwen2.5:3b-instruct: the passage has a paragraph break and the model's
+    # quote has backslash + "n" as two characters, the way JSON showed it the break.
+    quote = r"Booking policy\nBookings need a deposit of 25% of the fee."
+    assert locate_quote(quote, PARAGRAPHS) == (0, len(PARAGRAPHS))
+    span = (PARAGRAPHS.index("policy"), PARAGRAPHS.index(" a deposit"))
+    assert locate_quote(r"policy\t\r\nBookings need", PARAGRAPHS) == span
+
+
+def test_escaped_whitespace_does_not_relax_word_matching() -> None:
+    assert locate_quote(r"Booking policy\nBookings need a deposit of 30%", PARAGRAPHS) is None
+    # A backslash before other letters is not whitespace.
+    assert locate_quote(r"Booking policy\xBookings", PARAGRAPHS) is None
+    # Escapes alone are not a quote.
+    assert locate_quote(r"\n\n\n\n\n\n", PARAGRAPHS) is None
+
+
+def test_literal_backslash_n_in_the_source_still_matches_exactly() -> None:
+    passage = r"Use C:\new\table for the export."
+    assert locate_quote(r"C:\new\table for the export", passage) == (4, 31)
