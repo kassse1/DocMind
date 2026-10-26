@@ -70,6 +70,26 @@ class Settings(BaseSettings):
     hybrid_candidate_pool: int = Field(default=50, ge=1, le=100)
     hybrid_rrf_k: int = Field(default=60, ge=1, le=1000)
 
+    # Answer generation (POST /api/v1/ask). "disabled" = /ask answers 503
+    # generation_unavailable; "fake" = deterministic extractive stand-in (tests/dev, refused
+    # in prod); "openai-compatible" = any /v1/chat/completions server (Ollama, llama.cpp,
+    # LM Studio, vLLM, hosted APIs).
+    generation_backend: Literal["disabled", "fake", "openai-compatible"] = "disabled"
+    # Default: a local Ollama server. Configured by the operator, never taken from documents.
+    generation_base_url: str = "http://127.0.0.1:11434/v1"
+    generation_model: str = "qwen2.5:3b-instruct"
+    generation_api_key: SecretStr | None = None
+    generation_timeout_s: float = Field(default=120.0, gt=0)
+    generation_max_output_tokens: int = Field(default=512, ge=16, le=8192)
+    # Ask the server for a JSON object (response_format=json_object); disable for servers
+    # that reject the parameter. The output is validated either way.
+    generation_json_mode: bool = True
+    # Hugging Face tokenizer of the generation model, for exact context token counts
+    # (e.g. Qwen/Qwen2.5-3B-Instruct). None = UTF-8 byte count, a conservative upper bound.
+    generation_tokenizer: str | None = None
+    # Upper bound on the tokens of all retrieved passages put into the prompt.
+    rag_context_token_budget: int = Field(default=3000, ge=64, le=100_000)
+
     # Indexing worker (python -m app.worker).
     worker_poll_interval_s: float = Field(default=2.0, gt=0)
     # A running job whose worker has been silent this long is assumed dead and is reclaimed.
