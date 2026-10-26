@@ -155,3 +155,59 @@ def test_full_text_downgrade_removes_column_and_index(pg_engine: Engine) -> None
         assert "ix_document_chunks_search_vector" not in indexes
     finally:
         run_alembic(pg_engine, command.upgrade, "head")
+
+
+PHASE7_REVISION = "128b8af81b05"
+
+
+def test_auth_upgrade_keeps_legacy_users_and_documents_without_passwords(pg_engine) -> None:
+    run_alembic(pg_engine, command.downgrade, PHASE7_REVISION)
+    user_id, document_id = uuid.uuid4(), uuid.uuid4()
+    try:
+        with pg_engine.begin() as conn:
+            conn.execute(text("INSERT INTO users (id, email) VALUES (:u, 'legacy@example.com')"),
+                         {"u": user_id})
+            conn.execute(
+                text(
+                    "INSERT INTO documents (id, user_id, filename, content_type, file_size, "
+                    "content_hash) VALUES (:d, :u, 'a.txt', 'text/plain', 1, :h)"
+                ),
+                {"d": document_id, "u": user_id, "h": "a" * 64},
+            )
+        run_alembic(pg_engine, command.upgrade, "head")
+        with pg_engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT email, password_hash, is_active FROM users WHERE id = :u"),
+                {"u": user_id},
+            ).one()
+            owner = conn.scalar(text("SELECT user_id FROM documents WHERE id = :d"),
+                                {"d": document_id})
+        # Same account, same owner, no password: it cannot log in until an operator sets one.
+        assert tuple(row) == ("legacy@example.com", None, True)
+        assert owner == user_id
+    finally:
+        run_alembic(pg_engine, command.upgrade, "head")
+        with pg_engine.begin() as conn:
+            conn.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
+
+
+def test_auth_upgrade_refuses_unnormalized_emails(pg_engine) -> None:
+    run_alembic(pg_engine, command.downgrade, PHASE7_REVISION)
+    try:
+        with pg_engine.begin() as conn:
+            conn.execute(text("INSERT INTO users (id, email) VALUES (:u, 'Mixed@Example.com')"),
+                         {"u": uuid.uuid4()})
+        with pytest.raises(RuntimeError, match="not normalized"):
+            run_alembic(pg_engine, command.upgrade, "head")
+    finally:
+        with pg_engine.begin() as conn:
+            conn.execute(text("DELETE FROM users WHERE email = 'Mixed@Example.com'"))
+        run_alembic(pg_engine, command.upgrade, "head")
+
+
+def test_database_rejects_unnormalized_email_after_upgrade(pg_engine) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError), pg_engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id, email) VALUES (:u, ' A@Example.com')"),
+                     {"u": uuid.uuid4()})
