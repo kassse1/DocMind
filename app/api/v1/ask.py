@@ -53,7 +53,6 @@ def _retrieval_info(
     body: AskRequest,
     embedder: Embedder,
     counter: TokenCounter,
-    settings: Settings,
 ) -> RetrievalInfo:
     context = outcome.context
     return RetrievalInfo(
@@ -65,7 +64,7 @@ def _retrieval_info(
         excluded_empty=context.excluded_empty if context else 0,
         excluded_over_budget=context.excluded_over_budget if context else 0,
         context_tokens=context.tokens if context else 0,
-        context_token_budget=settings.rag_context_token_budget,
+        context_token_budget=outcome.token_budget,
         token_counter=counter.name,
     )
 
@@ -102,7 +101,7 @@ def ask(
     """
     outcome = ask_service.ask(session, embedder, generator, counter, settings, user, body)
     common = {
-        "retrieval": _retrieval_info(outcome, body, embedder, counter, settings),
+        "retrieval": _retrieval_info(outcome, body, embedder, counter),
         "generation_model": outcome.generation_model,
         "prompt_version": PROMPT_VERSION,
         "timing_ms": Timing(

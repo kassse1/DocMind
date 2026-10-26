@@ -10,13 +10,21 @@ Outcomes:
 - 200 with an answer: it passed every check of app/rag/grounding.py.
 - 200 with abstained=true and a reason: nothing retrieved, nothing fit the context, or the
   model's reply could not be grounded. The model's text is then never returned.
-- 503 generation_unavailable: the provider could not reply. Distinct from abstention: the
-  system failed, it did not decide the documents lack the answer.
+- 503 generation_unavailable: the provider could not reply, or (with an exact tokenizer)
+  it reports a prompt shorter than what was sent, i.e. it truncated it. Distinct from
+  abstention: the system failed, it did not decide the documents lack the answer.
+
+Context window: the passage budget is the smaller of DOCMIND_RAG_CONTEXT_TOKEN_BUDGET and
+what is left of DOCMIND_GENERATION_CONTEXT_WINDOW after the reply (max output tokens), the
+instructions, the question and a reserve for the chat template. A prompt larger than the
+window is not rejected by Ollama: it keeps only the end of it (measured with Ollama 0.40),
+so the system instructions would be lost without any error.
 Neither the question nor any passage is logged.
 """
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from fastapi import status
@@ -27,7 +35,7 @@ from app.core.errors import AppError
 from app.embeddings.base import Embedder
 from app.models import User
 from app.rag.context import GenerationContext, RetrievedChunk, build_context
-from app.rag.generation import GenerationUnavailableError, Generator
+from app.rag.generation import ChatMessage, Generation, GenerationUnavailableError, Generator
 from app.rag.grounding import Abstention, AbstentionReason, GroundedAnswer, evaluate_reply
 from app.rag.prompt import build_messages
 from app.rag.tokens import TokenCounter
@@ -36,6 +44,12 @@ from app.schemas.search import HybridSearchRequest, SearchRequest
 from app.services import search as search_service
 
 logger = logging.getLogger(__name__)
+
+# Chat-template tokens around the messages, not visible to the token counter. Qwen2.5 adds
+# 13 for a system + user pair (measured against Ollama's usage.prompt_tokens); the rest is
+# margin for other templates and for the separators between serialized sources.
+TEMPLATE_RESERVE_TOKENS = 64
+_NO_SOURCES = GenerationContext((), 1, "", 0, 0)
 
 
 def generation_unavailable(message: str = "The answer generator is unavailable.") -> AppError:
@@ -49,6 +63,8 @@ class AskOutcome:
     result: GroundedAnswer | Abstention
     retrieved: int
     context: GenerationContext | None
+    # Passage budget actually applied (configured budget, capped by the context window).
+    token_budget: int
     generation_model: str | None
     retrieval_ms: float
     generation_ms: float | None
@@ -72,6 +88,36 @@ def _retrieve(
     return list(search_service.search(session, embedder, settings, user, semantic))
 
 
+def passage_budget(settings: Settings, counter: TokenCounter, question: str) -> int:
+    """Tokens available for passages; <= 0 when even an empty context does not fit."""
+    fixed = sum(counter.count(m.content) for m in build_messages(question, _NO_SOURCES))
+    left = (
+        settings.generation_context_window
+        - settings.generation_max_output_tokens
+        - fixed
+        - TEMPLATE_RESERVE_TOKENS
+    )
+    return min(settings.rag_context_token_budget, left)
+
+
+def _check_not_truncated(
+    counter: TokenCounter, messages: Sequence[ChatMessage], generation: Generation
+) -> None:
+    """With an exact tokenizer, a server-side prompt count below the tokens we sent means
+    the server dropped part of the prompt; the reply must not be used. With the byte upper
+    bound no such check is possible (bytes always exceed tokens)."""
+    if not counter.exact or generation.prompt_tokens is None:
+        return
+    sent = sum(counter.count(m.content) for m in messages)
+    if generation.prompt_tokens < sent:
+        logger.error(
+            "Generation prompt truncated by the server: sent=%d tokens, server saw=%d",
+            sent,
+            generation.prompt_tokens,
+        )
+        raise generation_unavailable("The model server truncated the prompt.")
+
+
 def ask(
     session: Session,
     embedder: Embedder,
@@ -82,6 +128,10 @@ def ask(
     request: AskRequest,
 ) -> AskOutcome:
     started = time.monotonic()
+    try:
+        budget = passage_budget(settings, counter, request.question)
+    except GenerationUnavailableError:
+        raise generation_unavailable("The generation tokenizer is unavailable.") from None
     hits = _retrieve(session, embedder, settings, user, request)
     # Retrieval was read-only. Ending the transaction returns the connection to the pool
     # instead of holding it idle-in-transaction for the whole generation call.
@@ -95,21 +145,24 @@ def ask(
     if not hits:
         result = Abstention(AbstentionReason.NO_RETRIEVED_CHUNKS)
     else:
-        try:
-            context = build_context(hits, counter, settings.rag_context_token_budget)
-        except GenerationUnavailableError:
-            raise generation_unavailable("The generation tokenizer is unavailable.") from None
+        if budget >= 1:
+            context = build_context(hits, counter, budget)
+        else:
+            # Instructions + question + reply alone fill the window: nothing fits.
+            context = GenerationContext((), budget, counter.name, 0, len(hits))
         if not context.sources:
             result = Abstention(AbstentionReason.NO_ELIGIBLE_CONTEXT)
         else:
+            messages = build_messages(request.question, context)
             generation_started = time.monotonic()
             try:
-                raw = generator.generate(build_messages(request.question, context))
+                generation = generator.generate(messages)
             except GenerationUnavailableError:
                 raise generation_unavailable() from None
             generation_ms = (time.monotonic() - generation_started) * 1000
             model = generator.model_name
-            result = evaluate_reply(raw, context)
+            _check_not_truncated(counter, messages, generation)
+            result = evaluate_reply(generation.text, context)
 
     total_ms = (time.monotonic() - started) * 1000
     logger.info(
@@ -130,6 +183,7 @@ def ask(
         result=result,
         retrieved=len(hits),
         context=context,
+        token_budget=budget,
         generation_model=model,
         retrieval_ms=retrieval_ms,
         generation_ms=generation_ms,

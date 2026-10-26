@@ -54,7 +54,13 @@ from app.evaluation.run_search_eval import (
 )
 from app.models import User
 from app.rag.context import GenerationContext
-from app.rag.generation import ChatMessage, FakeGenerator, Generator, create_generator
+from app.rag.generation import (
+    ChatMessage,
+    FakeGenerator,
+    Generation,
+    Generator,
+    create_generator,
+)
 from app.rag.grounding import GROUNDING_POLICY, Abstention, locate_quote, parse_reply
 from app.rag.prompt import PROMPT_VERSION
 from app.rag.tokens import TokenCounter, create_token_counter
@@ -74,10 +80,10 @@ class RecordingGenerator:
         self.model_name = inner.model_name
         self.replies: list[str] = []
 
-    def generate(self, messages: Sequence[ChatMessage]) -> str:
-        reply = self.inner.generate(messages)
-        self.replies.append(reply)
-        return reply
+    def generate(self, messages: Sequence[ChatMessage]) -> Generation:
+        generation = self.inner.generate(messages)
+        self.replies.append(generation.text)
+        return generation
 
     def close(self) -> None:
         self.inner.close()

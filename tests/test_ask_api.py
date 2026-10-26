@@ -3,7 +3,7 @@
 import json
 import logging
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
 import numpy as np
@@ -17,10 +17,18 @@ from app.core.database import get_db_session
 from app.embeddings.fake import FakeEmbedder
 from app.main import create_app
 from app.models import EMBEDDING_DIMENSION, User
-from app.rag.generation import ChatMessage, FakeGenerator, GenerationUnavailableError
+from app.rag.context import GenerationContext, serialize_entry
+from app.rag.generation import (
+    ChatMessage,
+    FakeGenerator,
+    Generation,
+    GenerationUnavailableError,
+)
+from app.rag.prompt import build_messages
 from app.retrieval.fusion import FusedHit
 from app.retrieval.vector_search import ChunkHit
 from app.schemas.search import MAX_TOP_K
+from app.services import ask as ask_service
 from app.services import search as search_service
 from app.services.search import HybridOutcome
 
@@ -364,3 +372,108 @@ def test_question_and_passages_are_never_logged(app, api, monkeypatch, caplog) -
     for leaked in ("SECRET-QUESTION", "SECRET-PASSAGE", "SECRET-ANSWER", "SECRET-GARBAGE"):
         assert all(leaked not in record.getMessage() for record in caplog.records)
     assert any("Ask: user=" in record.getMessage() for record in caplog.records)
+
+
+class ExactWordCounter:
+    """Stands in for the model tokenizer: one token per word, counts declared exact."""
+
+    name = "test-words"
+    exact = True
+
+    def count(self, text: str) -> int:
+        return len(text.split())
+
+
+class ReportingGenerator(FakeGenerator):
+    """Reports a server-side prompt size, like Ollama's usage.prompt_tokens."""
+
+    def __init__(self, prompt_tokens: Callable[[int], int]) -> None:
+        super().__init__()
+        self._prompt_tokens = prompt_tokens
+
+    def generate(self, messages: Sequence[ChatMessage]) -> Generation:
+        reply = super().generate(messages)
+        sent = sum(ExactWordCounter().count(m.content) for m in messages)
+        return Generation(reply.text, self._prompt_tokens(sent))
+
+
+def _windowed(app, settings: Settings, **update: Any) -> None:
+    settings = settings.model_copy(
+        update={"embedding_backend": "fake", "generation_backend": "fake", **update}
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.state.token_counter = ExactWordCounter()
+
+
+def test_context_window_caps_the_passage_budget(app, api, settings, monkeypatch) -> None:
+    passages = [hit(" ".join(["word"] * 100), i) for i in range(5)]
+    monkeypatch.setattr(search_service, "search", lambda *a: passages)
+    fixed = sum(
+        ExactWordCounter().count(m.content)
+        for m in build_messages("q", GenerationContext((), 1, "", 0, 0))
+    )
+    text = " ".join(["word"] * 100)
+    entry = ExactWordCounter().count(
+        serialize_entry({"id": "S1", "filename": "contract.pdf", "page": 2, "text": text})
+    )
+    # Room for exactly two passages after the reply, the instructions and the reserve.
+    window = 100 + fixed + ask_service.TEMPLATE_RESERVE_TOKENS + 2 * entry + entry // 2
+    _windowed(app, settings, generation_context_window=window, generation_max_output_tokens=100)
+
+    body = api.post(URL, json={"question": "q"}).json()
+
+    retrieval = body["retrieval"]
+    assert retrieval["context_token_budget"] == 2 * entry + entry // 2
+    assert (retrieval["context_chunks"], retrieval["excluded_over_budget"]) == (2, 3)
+    assert retrieval["context_tokens"] == 2 * entry
+
+
+def test_configured_budget_applies_when_the_window_is_large(app, api, settings, searches):
+    _windowed(app, settings, generation_context_window=100_000, rag_context_token_budget=500)
+    assert api.post(URL, json={"question": "q"}).json()["retrieval"]["context_token_budget"] == 500
+
+
+def test_prompt_too_long_for_the_window_abstains_without_calling_the_model(
+    app, api, settings, searches
+) -> None:
+    # The instructions alone (a few hundred words) exceed what the reply leaves free.
+    _windowed(app, settings, generation_context_window=512, generation_max_output_tokens=400)
+    generator = use(app, lambda _m: pytest.fail("model called"))
+
+    body = api.post(URL, json={"question": "q"}).json()
+
+    assert body["abstention_reason"] == "no_eligible_context"
+    assert body["retrieval"]["context_token_budget"] < 1
+    assert body["retrieval"]["excluded_over_budget"] == len(HITS)
+    assert generator.calls == []
+
+
+def test_prompt_truncated_by_the_server_is_503(app, api, settings, searches, caplog) -> None:
+    _windowed(app, settings)
+    # Ollama keeps only the end of an oversized prompt and still answers 200.
+    app.state.generator = ReportingGenerator(lambda sent: sent // 2)
+
+    response = api.post(URL, json={"question": "SECRET-QUESTION"})
+
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "generation_unavailable",
+        "message": "The model server truncated the prompt. Try again later.",
+        "details": None,
+    }
+    assert any("truncated" in r.getMessage() for r in caplog.records)
+    assert all("SECRET-QUESTION" not in r.getMessage() for r in caplog.records)
+
+
+def test_full_prompt_reported_by_the_server_is_accepted(app, api, settings, searches) -> None:
+    _windowed(app, settings)
+    # The server counts the chat template on top of the content: more is fine.
+    app.state.generator = ReportingGenerator(lambda sent: sent + 13)
+    body = api.post(URL, json={"question": "q"}).json()
+    assert body["abstained"] is False
+
+
+def test_truncation_is_not_checked_with_the_byte_upper_bound(app, api, searches) -> None:
+    # Bytes always exceed tokens, so a smaller server count proves nothing.
+    app.state.generator = ReportingGenerator(lambda sent: 1)
+    assert api.post(URL, json={"question": "q"}).status_code == 200

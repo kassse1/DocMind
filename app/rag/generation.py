@@ -34,11 +34,19 @@ class ChatMessage:
     content: str
 
 
+@dataclass(frozen=True)
+class Generation:
+    text: str
+    # Prompt size as counted by the server (OpenAI "usage.prompt_tokens"), if reported.
+    # Lets the caller detect a prompt the server silently truncated.
+    prompt_tokens: int | None = None
+
+
 class Generator(Protocol):
     model_name: str
 
-    def generate(self, messages: Sequence[ChatMessage]) -> str:
-        """Return the model's raw reply text; raise GenerationUnavailableError on failure."""
+    def generate(self, messages: Sequence[ChatMessage]) -> Generation:
+        """Return the model's raw reply; raise GenerationUnavailableError on failure."""
         ...
 
     def close(self) -> None: ...
@@ -72,7 +80,7 @@ class OpenAICompatibleGenerator:
             follow_redirects=False,
         )
 
-    def generate(self, messages: Sequence[ChatMessage]) -> str:
+    def generate(self, messages: Sequence[ChatMessage]) -> Generation:
         payload: dict = {
             "model": self.model_name,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
@@ -93,16 +101,21 @@ class OpenAICompatibleGenerator:
             logger.warning("Generation server returned HTTP %d", response.status_code)
             raise GenerationUnavailableError(f"HTTP {response.status_code}")
         try:
-            content = response.json()["choices"][0]["message"]["content"]
+            body = response.json()
+            content = body["choices"][0]["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError):
             logger.warning("Generation server returned a body that is not a chat completion")
             raise GenerationUnavailableError("invalid chat completion body") from None
         # null content (e.g. a refusal or a tool call) is an empty reply, not an outage.
         if content is None:
-            return ""
+            content = ""
         if not isinstance(content, str):
             raise GenerationUnavailableError("invalid chat completion body")
-        return content
+        usage = body.get("usage")
+        prompt_tokens = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+        if not isinstance(prompt_tokens, int) or isinstance(prompt_tokens, bool):
+            prompt_tokens = None
+        return Generation(content, prompt_tokens)
 
     def close(self) -> None:
         self._client.close()
@@ -144,9 +157,9 @@ class FakeGenerator:
         self._responder = responder
         self.calls: list[list[ChatMessage]] = []
 
-    def generate(self, messages: Sequence[ChatMessage]) -> str:
+    def generate(self, messages: Sequence[ChatMessage]) -> Generation:
         self.calls.append(list(messages))
-        return self._responder(messages)
+        return Generation(self._responder(messages))
 
     def close(self) -> None:
         pass

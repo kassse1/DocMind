@@ -23,12 +23,15 @@ logger = logging.getLogger(__name__)
 
 class TokenCounter(Protocol):
     name: str
+    # True when counts equal the model's own (not just an upper bound).
+    exact: bool
 
     def count(self, text: str) -> int: ...
 
 
 class Utf8ByteCounter:
     name = "utf8-bytes-upper-bound"
+    exact = False
 
     def count(self, text: str) -> int:
         return len(text.encode("utf-8"))
@@ -37,6 +40,8 @@ class Utf8ByteCounter:
 class HuggingFaceTokenCounter:
     """Exact counts with the generation model's tokenizer. Loaded lazily on first use, so
     startup does not wait for (or need) the tokenizer files."""
+
+    exact = True
 
     def __init__(self, tokenizer_name: str) -> None:
         self.name = f"hf:{tokenizer_name}"

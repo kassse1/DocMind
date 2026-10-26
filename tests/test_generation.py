@@ -40,7 +40,8 @@ def test_openai_compatible_request_and_reply() -> None:
 
     reply = _generator(handler, api_key="sk-test", max_output_tokens=64).generate(MESSAGES)
 
-    assert reply == '{"status": "answered"}'
+    assert reply.text == '{"status": "answered"}'
+    assert reply.prompt_tokens is None  # no usage block in this response
     [request] = seen
     assert str(request.url) == "http://llm.local/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer sk-test"
@@ -67,7 +68,21 @@ def test_json_mode_can_be_disabled_and_no_key_sends_no_header() -> None:
 
 
 def test_null_content_is_an_empty_reply() -> None:
-    assert _generator(lambda _: _completion(None)).generate(MESSAGES) == ""
+    assert _generator(lambda _: _completion(None)).generate(MESSAGES).text == ""
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [({"prompt_tokens": 2050, "completion_tokens": 5}, 2050), ({"prompt_tokens": "x"}, None),
+     ({"prompt_tokens": True}, None), ("garbage", None)],
+)
+def test_prompt_tokens_are_read_from_usage(usage, expected) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "{}"}}], "usage": usage}
+        )
+
+    assert _generator(handler).generate(MESSAGES).prompt_tokens == expected
 
 
 def _refuse(_: httpx.Request) -> httpx.Response:
@@ -109,7 +124,8 @@ def test_fake_generator_records_calls_and_is_deterministic() -> None:
     generator = FakeGenerator()
     first = generator.generate([MESSAGES[0], user])
     assert first == generator.generate([MESSAGES[0], user])
-    assert json.loads(first) == {
+    assert first.prompt_tokens is None
+    assert json.loads(first.text) == {
         "status": "answered",
         "answer": "First one.",
         "citations": [{"source_id": "S1", "quote": "First one."}],
