@@ -4,6 +4,7 @@ from app.models.base import Base
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.document import EMBEDDING_DIMENSION, Document, DocumentChunk, DocumentStatus
 from app.models.job import ACTIVE_JOB_STATUSES, Job, JobKind, JobStatus
+from app.models.rate_limit import RateLimitCounter
 from app.models.session import AuthSession, RefreshToken
 from app.models.user import User
 
@@ -21,6 +22,7 @@ __all__ = [
     "JobStatus",
     "Message",
     "MessageRole",
+    "RateLimitCounter",
     "RefreshToken",
     "User",
 ]

@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = Field(default=7, ge=1, le=90)
     session_max_age_days: int = Field(default=30, ge=1, le=365)
 
+    # Rate limits ("requests/seconds"), shared by all API processes through PostgreSQL
+    # (app/services/rate_limit.py). Failed logins are also limited per email address.
+    rate_limit_enabled: bool = True
+    rate_limit_login_per_ip: str = "20/60"
+    rate_limit_login_failures_per_email: str = "10/900"
+    rate_limit_register_per_ip: str = "10/3600"
+    rate_limit_refresh_per_ip: str = "60/60"
+    # Reverse proxies whose X-Forwarded-For is believed (comma-separated IPs/CIDRs). Empty =
+    # the TCP peer is the client and X-Forwarded-For is ignored (app/core/client_ip.py).
+    trusted_proxies: str = ""
+
     # Embeddings. "fake" gives deterministic, meaningless vectors (tests/CI only).
     embedding_backend: Literal["sentence-transformers", "fake"] = "sentence-transformers"
     embedding_model: str = "intfloat/multilingual-e5-small"
@@ -129,6 +140,19 @@ class Settings(BaseSettings):
     def _check_chunking(self) -> "Settings":
         if self.chunk_overlap_tokens >= self.chunk_size_tokens:
             raise ValueError("chunk_overlap_tokens must be smaller than chunk_size_tokens")
+        return self
+
+    @model_validator(mode="after")
+    def _check_rate_limits(self) -> "Settings":
+        from app.core.client_ip import parse_networks
+        from app.services.rate_limit import Limit
+
+        for name in (
+            "rate_limit_login_per_ip", "rate_limit_login_failures_per_email",
+            "rate_limit_register_per_ip", "rate_limit_refresh_per_ip",
+        ):
+            Limit.parse(getattr(self, name))
+        parse_networks(self.trusted_proxies)
         return self
 
     @model_validator(mode="after")

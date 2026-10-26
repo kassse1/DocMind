@@ -14,7 +14,7 @@ pytestmark = pytest.mark.integration
 
 APP_TABLES = {
     "users", "documents", "document_chunks", "conversations", "messages", "jobs",
-    "auth_sessions", "refresh_tokens",
+    "auth_sessions", "refresh_tokens", "rate_limits",
 }
 INITIAL_REVISION = "fead9350b593"
 

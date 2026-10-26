@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_auth, get_current_user, get_token_settings
+from app.core.client_ip import client_ip, parse_networks
 from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
-from app.core.errors import DatabaseUnavailableRoute
+from app.core.errors import AppError, DatabaseUnavailableRoute
 from app.core.security import TokenSettings, create_access_token
 from app.models import User
 from app.schemas.auth import (
@@ -20,9 +21,17 @@ from app.schemas.auth import (
     UserRead,
 )
 from app.services import auth as auth_service
-from app.services import sessions
+from app.services import rate_limit, sessions
 
 router = APIRouter(prefix="/auth", tags=["auth"], route_class=DatabaseUnavailableRoute)
+
+
+def _limit(
+    db: Session, settings: Settings, request: Request, scope: str, spec: str
+) -> None:
+    if settings.rate_limit_enabled:
+        ip = client_ip(request, parse_networks(settings.trusted_proxies))
+        rate_limit.enforce(db, scope, ip, rate_limit.Limit.parse(spec))
 
 
 def _tokens(user: User, issued: sessions.IssuedRefresh, token_settings: TokenSettings):
@@ -45,9 +54,13 @@ def _tokens(user: User, issued: sessions.IssuedRefresh, token_settings: TokenSet
     },
 )
 def register(
-    body: RegisterRequest, session: Annotated[Session, Depends(get_db_session)]
+    body: RegisterRequest,
+    request: Request,
+    session: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserRead:
     """Create an account. Returns the public profile; log in to get tokens."""
+    _limit(session, settings, request, "register_ip", settings.rate_limit_register_per_ip)
     return UserRead.model_validate(auth_service.register(session, body.email, body.password))
 
 
@@ -61,12 +74,25 @@ def register(
 )
 def login(
     body: LoginRequest,
+    request: Request,
     session: Annotated[Session, Depends(get_db_session)],
     token_settings: Annotated[TokenSettings, Depends(get_token_settings)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TokenResponse:
     """Start a session: a short-lived access token and a single-use refresh token."""
-    user = auth_service.authenticate(session, body.email, body.password)
+    _limit(session, settings, request, "login_ip", settings.rate_limit_login_per_ip)
+    # Per account, only failures count: guessing one password is slowed down, while
+    # someone else's attempts cannot lock out an owner who knows the password ... until
+    # the failure budget is spent, which is the trade-off of any per-account limit.
+    per_email = rate_limit.Limit.parse(settings.rate_limit_login_failures_per_email)
+    if settings.rate_limit_enabled:
+        rate_limit.ensure_below(session, "login_email", body.email, per_email)
+    try:
+        user = auth_service.authenticate(session, body.email, body.password)
+    except AppError as exc:
+        if settings.rate_limit_enabled and exc.code == "invalid_credentials":
+            rate_limit.hit(session, "login_email", body.email, per_email)
+        raise
     return _tokens(user, sessions.start_session(session, user, settings), token_settings)
 
 
@@ -80,12 +106,14 @@ def login(
 )
 def refresh(
     body: RefreshRequest,
+    request: Request,
     session: Annotated[Session, Depends(get_db_session)],
     token_settings: Annotated[TokenSettings, Depends(get_token_settings)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TokenResponse:
     """Rotate: the presented refresh token is spent and a new pair is returned. Presenting a
     spent token again revokes the whole session (reuse detection)."""
+    _limit(session, settings, request, "refresh_ip", settings.rate_limit_refresh_per_ip)
     user, issued = sessions.rotate(session, body.refresh_token, settings)
     return _tokens(user, issued, token_settings)
 

@@ -109,3 +109,13 @@ def authenticate(client, email: str):
     token = create_access_token(user_id, session_id, app.state.token_settings)
     client.headers["Authorization"] = f"Bearer {token}"
     return client
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits(request) -> Iterator[None]:
+    """Rate-limit counters live in PostgreSQL and outlive TRUNCATE users: start each
+    integration test from zero so limits never leak between tests."""
+    engine = request.getfixturevalue("pg_engine")
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE rate_limits"))
+    yield

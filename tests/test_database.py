@@ -116,6 +116,7 @@ def test_all_models_registered_on_metadata() -> None:
         "jobs",
         "auth_sessions",
         "refresh_tokens",
+        "rate_limits",
     }
 
 
