@@ -205,3 +205,12 @@ def test_hugging_face_counter_counts_without_special_tokens(monkeypatch) -> None
     counter = HuggingFaceTokenCounter("any")
     assert counter.count("three word text") == 3
     assert calls == [False]
+
+
+def test_extractive_fake_does_not_judge_support_checks() -> None:
+    # Regression: the default fake crashed (KeyError) on the support check's prompts.
+    verifier_call = [
+        ChatMessage("system", "check"),
+        ChatMessage("user", json.dumps({"question": "q", "evidence": [{"id": "S1", "text": "t"}]})),
+    ]
+    assert extractive_reply(verifier_call) == "{}"

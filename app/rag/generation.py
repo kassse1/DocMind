@@ -128,8 +128,15 @@ _SENTENCE = re.compile(r".+?(?:[.!?](?=\s)|$)", re.DOTALL)
 
 def extractive_reply(messages: Sequence[ChatMessage]) -> str:
     """Answer with the first sentence of source S1, quoted verbatim. Says nothing about
-    whether S1 answers the question: it exists to exercise the pipeline, not to answer."""
-    sources = json.loads(messages[-1].content)["sources"]
+    whether S1 answers the question: it exists to exercise the pipeline, not to answer.
+
+    Calls that are not answer prompts (the support check's, which carry "evidence") get an
+    empty object: the fake cannot judge support, so strict mode fails closed
+    (verification_inconclusive) instead of crashing."""
+    data = json.loads(messages[-1].content)
+    if "sources" not in data:
+        return "{}"
+    sources = data["sources"]
     if not sources:
         return json.dumps({"status": "insufficient_evidence", "answer": "", "citations": []})
     first = sources[0]
