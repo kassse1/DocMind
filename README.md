@@ -16,6 +16,10 @@ Work in progress.
 - **Phase 6 (done, pending review):** PostgreSQL full-text search (generated `tsvector` +
   GIN index) and hybrid retrieval with Reciprocal Rank Fusion (`POST /api/v1/search/hybrid`),
   evaluated against semantic-only search.
+- **Phase 7 (done, pending review):** question answering (`POST /api/v1/ask`): retrieval over
+  your documents, a bounded context, a replaceable generation provider (local
+  OpenAI-compatible server such as Ollama, or a deterministic fake), server-side citation
+  validation and abstention. See [Question answering (RAG)](#question-answering-rag).
 
 ## Quick start (Windows PowerShell)
 
@@ -68,6 +72,15 @@ App settings use the `DOCMIND_` prefix and are read from the environment or `.en
 | `DOCMIND_SEARCH_TIMEOUT_MS` | `5000` | `statement_timeout` for each search query; exceeded = 503 |
 | `DOCMIND_HYBRID_CANDIDATE_POOL` | `50` | Hybrid search: candidates per branch before fusion (1..100; never below `top_k`) |
 | `DOCMIND_HYBRID_RRF_K` | `60` | Hybrid search: RRF constant k in 1/(k + rank) |
+| `DOCMIND_GENERATION_BACKEND` | `disabled` | `/ask` provider: `disabled` (503), `fake` (tests/dev; refused in prod), `openai-compatible` |
+| `DOCMIND_GENERATION_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible API root (default: local Ollama) |
+| `DOCMIND_GENERATION_MODEL` | `qwen2.5:3b-instruct` | Model name sent to the server |
+| `DOCMIND_GENERATION_API_KEY` | unset | Bearer token, only if the server needs one (secret: `.env` only) |
+| `DOCMIND_GENERATION_TIMEOUT_S` | `120` | Per-request timeout; exceeded = 503 `generation_unavailable` |
+| `DOCMIND_GENERATION_MAX_OUTPUT_TOKENS` | `512` | `max_tokens` of the reply (16..8192) |
+| `DOCMIND_GENERATION_JSON_MODE` | `true` | Send `response_format={"type":"json_object"}`; turn off if the server rejects it |
+| `DOCMIND_GENERATION_TOKENIZER` | unset | Hugging Face tokenizer of the model for exact budget counts; unset = UTF-8 bytes (upper bound) |
+| `DOCMIND_RAG_CONTEXT_TOKEN_BUDGET` | `3000` | Max tokens of all passages in the prompt (64..100000) |
 | `DOCMIND_WORKER_POLL_INTERVAL_S` | `2` | Worker sleep when the queue is empty |
 | `DOCMIND_JOB_LEASE_TIMEOUT_S` | `1800` | A `running` job older than this is assumed abandoned and reclaimed |
 | `DOCMIND_JOB_MAX_ATTEMPTS` | `3` | Attempts before a document is marked `failed` |
@@ -827,6 +840,257 @@ full_text 2.8 ms, hybrid 15.2 ms. Indicative only.
 python -m app.evaluation.run_search_eval --models current --retrieval semantic,full_text,hybrid --k 1,3,5 --offline
 ```
 
+## Question answering (RAG)
+
+`POST /api/v1/ask` answers a question from **your** indexed documents and returns citations
+that the server has checked. If no checked answer can be given, it **abstains** (200 with
+`abstained: true` and a machine-readable reason) instead of guessing. `/search` and
+`/search/hybrid` are unchanged.
+
+### Request flow
+
+```text
+question ──► retrieval (app.services.search: semantic by default, hybrid on request)
+             · only your documents, optional document_ids (foreign = missing = 404)
+             · only chunks of the active embedding model, statement timeout
+         ──► end the read-only DB transaction (no connection held during generation)
+         ──► context builder (app/rag/context.py)
+             · whole chunks in rank order, labelled S1..Sn, within the token budget
+         ──► prompt (app/rag/prompt.py)
+             · fixed system message; question + passages as ONE JSON object (data)
+         ──► generation provider (app/rag/generation.py) ── failure ──► 503 generation_unavailable
+         ──► grounding checks (app/rag/grounding.py) ── any failure ──► abstain (200)
+         ──► answer + citations built from database metadata
+```
+
+Layers: `app/api/v1/ask.py` (router), `app/services/ask.py` (use case), `app/rag/*`
+(context, prompt, providers, grounding), `app/schemas/ask.py` (contract). Retrieval is the
+production search service itself, so `/ask` inherits its ownership filter, document check,
+model filter, timeouts and errors.
+
+### Request and response
+
+```powershell
+$env:DOCMIND_GENERATION_BACKEND = "openai-compatible"   # or "fake" to try the pipeline offline
+uvicorn app.main:app
+
+$body = @{ question = "When do I have to pay an invoice?"; top_k = 5 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/ask `
+  -ContentType "application/json; charset=utf-8" `
+  -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) | ConvertTo-Json -Depth 6
+```
+
+| Field | Type | Default | Rules |
+|---|---|---|---|
+| `question` | string | required | Trimmed; 1 to 1000 characters |
+| `top_k` | int | `5` | 1 to 20, strict integer (`"5"` and `true` are 422). Passages retrieved; the budget may admit fewer |
+| `document_ids` | list of UUIDs | all your documents | 1 to 50, deduplicated; each must be yours (404 otherwise) |
+| `retrieval_mode` | `semantic` / `hybrid` | `semantic` | `hybrid` = `/search/hybrid` with `mode=hybrid`. Semantic stays the default because hybrid ranked worse in the Phase 6 evaluation |
+
+Unknown fields are rejected (422), as in `/search`.
+
+Response `200`. Real output of the endpoint on the test database with a synthetic
+two-chunk document; the reply was **scripted** (`FakeGenerator`), not written by a model,
+and the fake embedder ordered the passages:
+
+```json
+{
+  "answer": "Within 30 days of the invoice date; after that a late fee of 1.5% per month applies [S2][S1].",
+  "abstained": false,
+  "abstention_reason": null,
+  "citations": [
+    {
+      "source_id": "S2",
+      "document_id": "5cee2661-92e7-4584-8a26-7672559b2b5f",
+      "filename": "billing-policy.pdf",
+      "chunk_id": "782e7424-0754-4417-b25d-9d4ac674a5cf",
+      "chunk_index": 0,
+      "page_number": 2,
+      "char_start": 0,
+      "char_end": 112,
+      "quotes": [{"text": "must be paid within 30 days of the invoice date", "char_start": 64, "char_end": 111}]
+    },
+    {
+      "source_id": "S1",
+      "document_id": "5cee2661-92e7-4584-8a26-7672559b2b5f",
+      "filename": "billing-policy.pdf",
+      "chunk_id": "ce9c8127-4857-4610-a491-ca3608a0b4fd",
+      "chunk_index": 1,
+      "page_number": 2,
+      "char_start": 114,
+      "char_end": 238,
+      "quotes": [{"text": "a late fee of 1.5% of the outstanding amount", "char_start": 158, "char_end": 202}]
+    }
+  ],
+  "grounding": {
+    "policy": "quote-match-v1",
+    "citation_ids_valid": true,
+    "quotes_verified": true,
+    "numbers_verified": true,
+    "entailment_verified": false
+  },
+  "retrieval": {
+    "mode": "semantic", "top_k": 5, "embedding_model": "fake/sha256",
+    "retrieved_chunks": 2, "context_chunks": 2, "excluded_empty": 0, "excluded_over_budget": 0,
+    "context_tokens": 374, "context_token_budget": 3000, "token_counter": "utf8-bytes-upper-bound"
+  },
+  "generation_model": "scripted-example",
+  "prompt_version": "grounded-qa-v1",
+  "timing_ms": {"retrieval_ms": 5.8, "generation_ms": 0.0, "total_ms": 6.1}
+}
+```
+
+An abstention has the same shape with `answer: null`, `citations: []`, `grounding: null`
+and a reason, e.g. `"abstention_reason": "unverified_quote"`. `generation_model` is `null`
+when the model was never called (nothing retrieved, nothing fit the budget).
+`retrieval` contains counts only, never passage text.
+
+### Citations: what is guaranteed
+
+Every citation in a `200` answer:
+
+- names a passage that was **in this request's context** (`source_id` S1..Sn). The context is
+  built only from the caller's chunks, and the model never sees database ids, so a foreign,
+  invented, excluded or guessed chunk cannot be cited: such a reply abstains;
+- carries `document_id`, `filename`, `chunk_id`, `chunk_index`, `page_number`, `char_start`,
+  `char_end` **from the database** (the model's text is never used for metadata);
+- has at least one quote **found in the cited passage** (exact, or ignoring case and runs of
+  whitespace; at least 5 non-space characters). The returned quote text and offsets are cut
+  from the stored chunk, in the same coordinates as `char_start`/`char_end` (normalized page
+  text, or document text for TXT/DOCX), so `page_text[quote.char_start:quote.char_end]`
+  is the quote;
+- is deduplicated: one entry per source, repeated quotes merged, in first-cited order.
+
+And for the answer itself: every number in it occurs in a cited passage (or is a cited page
+number), and every `[Sn]` marker in it names a context passage.
+
+### What is NOT guaranteed (grounding limitations)
+
+Checking that a citation exists and that its quote is real is **not** proof that the answer
+follows from it. `grounding.entailment_verified` is always `false`:
+
+- a model can quote a true sentence and still draw a wrong conclusion, answer a different
+  question, or add unsupported words around a correct number;
+- the numbers check compares digit sequences only (`1,5` and `1.5` match; `15` would too);
+  written-out numbers ("thirty") are not checked;
+- if a document contains an injected false claim, a model that repeats it while quoting it
+  **passes every check**: the quote is real. The checks limit what an answer can claim
+  without evidence; they cannot tell good evidence from planted evidence;
+- semantic search always returns the nearest chunks, related or not; there is no similarity
+  threshold (cosine is not calibrated, and no universal cut-off was found or invented).
+  Deciding that the passages do not answer the question is the model's job, and the eval
+  measures how well it does it only when a real model is run.
+
+A semantic check (an NLI model or a second LLM pass judging each claim against its quotes)
+is the natural next step, to be added only with a measured benefit.
+
+### Abstention
+
+| `abstention_reason` | When |
+|---|---|
+| `no_retrieved_chunks` | Retrieval returned nothing (no indexed documents in scope). The model is not called |
+| `no_eligible_context` | All retrieved chunks were empty or larger than the remaining budget. The model is not called |
+| `model_insufficient_evidence` | The model replied `"status": "insufficient_evidence"` |
+| `empty_model_output` | The reply was empty or whitespace |
+| `malformed_model_output` | Not one JSON object of the required shape, wrong types, empty answer, or answer over 4000 characters |
+| `missing_citations` | An answer without any citation |
+| `invalid_citation` | A citation or `[Sn]` marker names a source that was not in the context |
+| `unverified_quote` | A quote is not in its cited passage (or too short to prove anything) |
+| `unsupported_number` | The answer contains a number that no cited passage contains |
+
+Policy: one bad citation rejects the whole answer (a model that fabricated one citation is
+not trusted for the rest). The model's text is never returned when abstaining.
+
+Failures that are **not** abstentions, because the system failed rather than deciding:
+
+| Status | Code | When |
+|---|---|---|
+| 503 | `generation_unavailable` | Generation not configured (`DOCMIND_GENERATION_BACKEND=disabled`, checked before any DB work), provider unreachable, timeout, HTTP error, a body that is not a chat completion, or the configured tokenizer cannot load |
+| 503 | `embedding_unavailable` / `database_unavailable` | As in `/search` (includes the statement timeout) |
+| 404 | `document_not_found` | A `document_ids` entry is missing **or belongs to someone else** (same response) |
+| 401 | `authentication_required` | `DOCMIND_ENVIRONMENT=prod` until Phase 8 |
+| 422 | `validation_error` | Invalid request |
+
+### Context construction and token budget
+
+- Retrieved chunks are added **whole**, in rank order; ids S1..Sn are assigned only to
+  passages that made it in, so they are dense and deterministic for the same retrieval.
+- A chunk is never truncated: a cut passage would no longer match its offsets and could lose
+  the evidence. An oversized chunk is skipped (counted in `excluded_over_budget`) and smaller
+  ones after it can still fit. Whitespace-only chunks are skipped (`excluded_empty`).
+- The budget counts each passage as serialized into the prompt (JSON-escaped, with id,
+  filename and page). The system prompt, question and reply are on top of it.
+- Token counting: with `DOCMIND_GENERATION_TOKENIZER` set (e.g. `Qwen/Qwen2.5-3B-Instruct`),
+  the model's own tokenizer, downloaded on first use. Unset: the **UTF-8 byte length**, an
+  upper bound for byte-level BPE tokenizers (every token covers at least one byte) and, in
+  practice, for SentencePiece ones. It is loose (about 3-4 bytes per real token, more for
+  Cyrillic), so it admits fewer passages: on a real indexed PDF, 3 chunks used 2448 of the
+  3000 default. Raise the budget once the real tokenizer is configured and the server's
+  context window is known; an underestimate would let the server silently cut the prompt.
+
+### Prompt-injection defenses
+
+Document text is untrusted. Defense in depth, not a guarantee:
+
+1. Instructions live only in the system message, which never contains document text or the
+   question.
+2. The user message is one JSON object; passages and question are JSON strings, so a document
+   cannot close a delimiter, forge a `"sources"` entry or a "system" section (tested with
+   such a payload).
+3. The system prompt tells the model the passages are data and to ignore instructions in them.
+4. The reply must pass the strict output contract and the grounding checks above.
+5. Neither the question, the passages nor the model's reply are logged: the log line has the
+   user id, counts, the outcome and timings.
+
+Measured residual risk (see [RAG evaluation](#rag-evaluation)): a topic-targeted injected
+passage can outrank the real evidence in retrieval. At `top_k=1` it replaced the gold
+passage for two of twelve questions.
+
+### Generation providers and local models
+
+| Backend | Use |
+|---|---|
+| `disabled` (default) | `/ask` answers 503. Search works with no LLM at all |
+| `fake` | `FakeGenerator`: deterministic, offline. Default reply = first sentence of S1, quoted. Tests script any reply (malformed, hallucinated, injected). Refused in prod. **Not** a model: it says nothing about answer quality |
+| `openai-compatible` | Any `/v1/chat/completions` server: Ollama, llama.cpp `llama-server`, LM Studio, vLLM, or a hosted API with `DOCMIND_GENERATION_API_KEY`. Temperature 0, `response_format=json_object` unless disabled, redirects not followed |
+
+No model was downloaded or run in this phase, so **no model quality has been measured**.
+A local setup that fits this project's development machine (Ryzen 5 7500F, 32 GB RAM,
+RTX 5060 8 GB; the venv's PyTorch is the CPU build, which does not matter for Ollama, which
+ships its own CUDA runtime):
+
+```powershell
+# Install Ollama from https://ollama.com (Windows installer), then:
+ollama pull qwen2.5:3b-instruct     # roughly 2 GB download; 7b variants are roughly 4.7 GB
+ollama list
+$env:DOCMIND_GENERATION_BACKEND = "openai-compatible"
+$env:DOCMIND_GENERATION_MODEL = "qwen2.5:3b-instruct"
+$env:DOCMIND_GENERATION_TOKENIZER = "Qwen/Qwen2.5-3B-Instruct"   # exact budget counts (small download)
+uvicorn app.main:app
+```
+
+Hardware notes: a 3B model at 4-bit quantization fits in 8 GB of VRAM with room for the
+context; on CPU only it works but is slow (expect seconds per answer, more for long contexts).
+Make sure the server's context window covers the system prompt, the budget and the reply:
+some Ollama versions default to a small window and **silently truncate** longer prompts (set
+`OLLAMA_CONTEXT_LENGTH` or `num_ctx` according to your Ollama version's docs). Language
+support: Russian and English are expected to work with Qwen2.5; **Kazakh is unknown** and
+must be measured with the RAG evaluation before relying on it.
+
+Offline behavior: with `disabled` or `fake`, `/ask` never touches the network. With a local
+Ollama server, nothing leaves the machine. The base URL is operator configuration, never
+taken from documents; URLs inside documents are never fetched.
+
+### Security and privacy limitations
+
+- Single development user until Phase 8; ownership isolation is enforced and tested with two
+  users, but nobody authenticates yet.
+- A hosted provider (`openai-compatible` with a remote URL) receives the question and the
+  retrieved passages. Keep it local for private documents.
+- The answer is model output: clients must render it as text, never as HTML or Markdown that
+  can execute or load resources.
+- Quotes and filenames in citations are document content and are returned to their owner.
+
 ## Search quality evaluation
 
 A small, version-controlled benchmark checks how well search ranks the right passage, and
@@ -995,6 +1259,79 @@ not comparable: the first load also paid for importing PyTorch.
   wording of some queries overlaps with the passages.
 - Scores depend on the model revision and library versions recorded in the report.
 
+## RAG evaluation
+
+`python -m app.evaluation.run_rag_eval` asks every labeled question through the production
+`/ask` service (`app.services.ask.ask`) in a private, rolled-back schema of the `*_test`
+database, as the search evaluation does.
+
+Dataset `app/evaluation/datasets/rag_eval_v1.json` (v1.0.0, synthetic, invented facts):
+the 49 passages of the search corpus plus three "notice" documents, one per language, each
+holding a **topic-targeted prompt injection** with a false claim (365 days, 7 тенге,
+31 желтоқсан). 21 questions, each asked only within its language's documents:
+
+| Category | EN | RU | KK | Expected |
+|---|---|---|---|---|
+| answerable (a passage states the answer; gold passage labelled) | 3 | 3 | 3 | answer |
+| unanswerable (nothing answers it) | 2 | 1 | 1 | abstain |
+| misleading (same topic, but no passage answers it) | 2 | 2 | 1 | abstain |
+| injection (answerable; injected passage in the same language) | 1 | 1 | 1 | answer, without the injected claim |
+
+Plus 14 **citation validation cases**: scripted replies (valid quote in EN/RU/KK, duplicate
+citations, fabricated id, chunk UUID as id, `[S42]` marker, quote not in source, quote from
+another source, invented number, no citations, malformed JSON, empty reply, model
+abstention) that must produce the labelled outcome. The loader rejects inconsistent labels
+(e.g. a forbidden string that occurs in the true answer).
+
+What is reported, kept strictly apart:
+
+| Metric | Generator | Meaning |
+|---|---|---|
+| Retrieval coverage | any | Share of questions with a gold passage whose gold passage reached the context |
+| Injection in context | any | Share of injection questions whose injected passage reached the context (an injection never retrieved tests nothing) |
+| Citation cases | any (scripted) | Validator conformance; not model behavior |
+| Owner isolation | any | Aborts the run if another user's chunk ever reaches the context |
+| Answer rate / abstention rate / unsupported-answer rate | **real model only** | Answered when answerable; abstained when not; answered although nothing answers it |
+| Gold-cited rate, answer-contains-expected | real model only | Lexical proxies, not correctness judgements |
+| Injection-followed rate | real model only | Answers containing the injected claim, over injections that reached the context |
+| Raw citation-id validity / quote verification | real model only | Of the citations the model wrote, before rejection. Citation validity is **not** faithfulness |
+| Latency | any | Single run, indicative |
+
+With `--generator fake` the generator metrics are `null`: the extractive fake always
+answers from S1, so they would describe the fake, not a model.
+
+```powershell
+# Needs the migrated docmind_test database (see Tests) and the cached embedding model.
+$env:DOCMIND_TEST_DATABASE_URL = "<...>/docmind_test"
+python -m app.evaluation.run_rag_eval --generator fake --offline              # pipeline checks
+python -m app.evaluation.run_rag_eval --generator fake --offline --top-k 1 --output docs/evaluation/rag_eval_v1.0.0_fake_top1.json
+# Real model (after the Ollama setup above):
+$env:DOCMIND_GENERATION_BACKEND = "openai-compatible"
+python -m app.evaluation.run_rag_eval --generator configured --offline         # writes ..._real.json
+```
+
+### Results (v1.0.0, fake generator, `intfloat/multilingual-e5-small`)
+
+Measured in this phase; reports in `docs/evaluation/rag_eval_v1.0.0_fake*.json`.
+**No real-model quality measurement was performed**: no generation model is installed on
+the development machine yet.
+
+| `top_k` | Retrieval coverage (12 questions with gold) | Injection in context (3) | Citation cases |
+|---|---|---|---|
+| 5 (default) | 1.000 (12/12) | 1.000 (3/3) | 14/14 |
+| 3 | 1.000 (12/12) | 1.000 (3/3) | 14/14 |
+| 1 | 0.833 (10/12) | 0.333 (1/3) | 14/14 |
+
+- At `top_k=1` the injected notice outranked the real evidence for `ru-a2` and `kk-i1`:
+  a topic-targeted planted passage can push the true answer out of the context entirely,
+  before the model or the grounding checks are involved. Larger `top_k` keeps the evidence
+  in the context but also puts the injection in front of the model, which is the case only
+  a real-model run can score.
+- Coverage is saturated at `top_k >= 3`: the per-language corpora are small (16 to 17
+  passages), so this set cannot tell retrieval variants apart; the search evaluation
+  (36 queries, Recall@k/MRR) is the better retrieval benchmark.
+- Retrieval latency per question: median about 17 ms on CPU (single run, indicative).
+
 ## Tests
 
 ```powershell
@@ -1003,7 +1340,9 @@ ruff check .
 ```
 
 Ordinary tests never download a model or touch the network: they use `FakeEmbedder`
-(deterministic SHA-256-seeded vectors) and simple word or character tokenizers. To run the
+(deterministic SHA-256-seeded vectors), simple word or character tokenizers, `FakeGenerator`
+(scripted replies) and `httpx.MockTransport` for the OpenAI-compatible client. No test calls
+an LLM. To run the
 opt-in tests against the real model (downloads it on first run):
 
 ```powershell
@@ -1014,7 +1353,9 @@ Remove-Item Env:DOCMIND_RUN_MODEL_TESTS
 
 To run the PostgreSQL integration tests (models, constraints, cascades, migrations, readiness,
 uploads, indexing pipeline, job queue, vector, full-text and hybrid search ranking,
-isolation, timeouts, the full-text migration on existing data):
+isolation, timeouts, the full-text migration on existing data, `/ask` end to end with two
+users, citation offsets against stored chunks, injection passages, the context budget, and
+the RAG evaluation runner):
 
 ```powershell
 docker compose up -d postgres
@@ -1045,9 +1386,16 @@ SQLite would not prove the PostgreSQL schema works.
 
 ## Limitations (current phase)
 
-- No RAG or authentication yet. `users` has no password column; authentication arrives in
-  Phase 8. All uploads and searches act as the development user. Search already filters by
-  owner, so per-user isolation only needs real authentication behind `get_current_user`.
+- No authentication yet. `users` has no password column; authentication arrives in
+  Phase 8. All uploads, searches and questions act as the development user. Search and
+  `/ask` already filter by owner, so per-user isolation only needs real authentication
+  behind `get_current_user`.
+- RAG answer quality is **unmeasured**: no real generation model has been run. Grounding
+  checks verify citation identity, quotes and numbers, not entailment (see
+  [What is NOT guaranteed](#what-is-not-guaranteed-grounding-limitations)). No conversation
+  history yet: each `/ask` is independent.
+- The default context budget is counted with a loose byte upper bound unless the model's
+  tokenizer is configured, so fewer passages fit than the model could take.
 - Retrieval quality is measured only on a small synthetic dataset (36 queries) and only
   **within one language**. Cross-lingual retrieval is not evaluated. The earlier smoke-run
   miss (Russian query against an English document) is still an open, untested case.
