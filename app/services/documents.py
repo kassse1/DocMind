@@ -180,3 +180,50 @@ def _upload(
         "Document uploaded: id=%s user=%s type=%s size=%d", document.id, user.id, spec.kind, size
     )
     return UploadResult(document=document, extraction=extraction)
+
+
+def _not_found() -> AppError:
+    # Same response for a missing document and another user's: existence is not disclosed.
+    return AppError("document_not_found", "Document not found.", status.HTTP_404_NOT_FOUND)
+
+
+def list_documents(session: Session, user: User, limit: int, offset: int) -> list[Document]:
+    """The caller's documents only, newest first."""
+    return list(
+        session.scalars(
+            select(Document)
+            .where(Document.user_id == user.id)
+            .order_by(Document.created_at.desc(), Document.id)
+            .limit(limit)
+            .offset(offset)
+        )
+    )
+
+
+def get_document(session: Session, user: User, document_id: uuid.UUID) -> Document:
+    # Ownership is part of the query: another user's row is never loaded.
+    document = session.scalars(
+        select(Document).where(Document.id == document_id, Document.user_id == user.id)
+    ).one_or_none()
+    if document is None:
+        raise _not_found()
+    return document
+
+
+def delete_document(
+    session: Session, storage: FileStorage, user: User, document_id: uuid.UUID
+) -> None:
+    """Delete the row (chunks, embeddings and jobs cascade in PostgreSQL), then the file.
+
+    Row first: if removing the file fails, an orphaned file remains (harmless, unreachable)
+    rather than a row pointing at a missing file. A worker indexing the document at the
+    same time loses its job row and discards its results (app/services/jobs.py).
+    """
+    document = get_document(session, user, document_id)
+    session.delete(document)
+    session.commit()
+    try:
+        storage.delete(document_id)
+    except OSError as exc:
+        logger.warning("Stored file of a deleted document not removed (%s)", type(exc).__name__)
+    logger.info("Deleted document=%s user=%s", document_id, user.id)

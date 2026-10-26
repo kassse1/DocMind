@@ -28,6 +28,12 @@ class ExtractionSummary(BaseModel):
     character_count: int
 
 
+class DocumentList(BaseModel):
+    documents: list[DocumentRead]
+    limit: int
+    offset: int
+
+
 class DocumentUploadResponse(BaseModel):
     document: DocumentRead
     extraction: ExtractionSummary

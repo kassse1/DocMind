@@ -1,6 +1,7 @@
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_storage
@@ -8,10 +9,18 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
 from app.ingestion.storage import FileStorage
 from app.models import User
-from app.schemas.documents import DocumentRead, DocumentUploadResponse, ExtractionSummary
+from app.schemas.documents import (
+    DocumentList,
+    DocumentRead,
+    DocumentUploadResponse,
+    ExtractionSummary,
+)
 from app.services import documents as document_service
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+DEFAULT_PAGE = 50
+MAX_PAGE = 200
 
 
 @router.post(
@@ -44,3 +53,56 @@ def upload_document(
             character_count=result.extraction.character_count,
         ),
     )
+
+
+@router.get(
+    "",
+    response_model=DocumentList,
+    responses={401: {"description": "Missing, invalid or expired access token"}},
+)
+def list_documents(
+    session: Annotated[Session, Depends(get_db_session)],
+    user: Annotated[User, Depends(get_current_user)],
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
+    offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
+) -> DocumentList:
+    """Your documents, newest first, with their indexing status."""
+    documents = document_service.list_documents(session, user, limit, offset)
+    return DocumentList(
+        documents=[DocumentRead.model_validate(d) for d in documents], limit=limit, offset=offset
+    )
+
+
+@router.get(
+    "/{document_id}",
+    response_model=DocumentRead,
+    responses={
+        401: {"description": "Missing, invalid or expired access token"},
+        404: {"description": "No such document, or it belongs to someone else (same response)"},
+    },
+)
+def get_document(
+    document_id: uuid.UUID,
+    session: Annotated[Session, Depends(get_db_session)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> DocumentRead:
+    return DocumentRead.model_validate(document_service.get_document(session, user, document_id))
+
+
+@router.delete(
+    "/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        401: {"description": "Missing, invalid or expired access token"},
+        404: {"description": "No such document, or it belongs to someone else (same response)"},
+    },
+)
+def delete_document(
+    document_id: uuid.UUID,
+    session: Annotated[Session, Depends(get_db_session)],
+    user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[FileStorage, Depends(get_storage)],
+) -> Response:
+    """Delete one of your documents with its chunks, embeddings, jobs and stored file."""
+    document_service.delete_document(session, storage, user, document_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
