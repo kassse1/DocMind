@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     # System prompt version (app/rag/prompt.py); reported in every /ask response. v2 is the
     # default after the held-out comparison with qwen2.5:3b-instruct (see README).
     rag_prompt_version: Literal["grounded-qa-v1", "grounded-qa-v2"] = "grounded-qa-v2"
+    # Which retrieved chunks reach the prompt (app/rag/selection.py): "rank" = all of them
+    # (Phase 7.1), "relative_margin" = only those within rag_similarity_margin of the best.
+    rag_context_selection: Literal["rank", "relative_margin"] = "rank"
+    rag_similarity_margin: float = Field(default=0.03, ge=0.0, le=2.0)
     # Upper bound on the tokens of all retrieved passages put into the prompt.
     rag_context_token_budget: int = Field(default=3000, ge=64, le=100_000)
 

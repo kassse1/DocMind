@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable, Iterator, Sequence
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -477,3 +478,30 @@ def test_truncation_is_not_checked_with_the_byte_upper_bound(app, api, searches)
     # Bytes always exceed tokens, so a smaller server count proves nothing.
     app.state.generator = ReportingGenerator(lambda sent: 1)
     assert api.post(URL, json={"question": "q"}).status_code == 200
+
+
+def test_default_selection_is_rank_and_keeps_every_hit(api, searches) -> None:
+    retrieval = api.post(URL, json={"question": "q"}).json()["retrieval"]
+    assert (retrieval["context_selection"], retrieval["excluded_by_selection"]) == ("rank", 0)
+    assert retrieval["context_chunks"] == len(HITS)
+
+
+def test_relative_margin_drops_distant_hits_before_the_budget(app, api, settings, monkeypatch):
+    near = hit("Invoices must be paid within 30 days.", 0)
+    far = replace(hit("Unrelated text in another language.", 1), similarity=near.similarity - 0.2)
+    monkeypatch.setattr(search_service, "search", lambda *a: [near, far])
+    tuned = settings.model_copy(
+        update={
+            "embedding_backend": "fake", "generation_backend": "fake",
+            "rag_context_selection": "relative_margin",
+        }
+    )
+    app.dependency_overrides[get_settings] = lambda: tuned
+    generator = use(app, scripted(status="insufficient_evidence", answer="", citations=[]))
+
+    body = api.post(URL, json={"question": "q"}).json()
+
+    assert [s["text"] for s in sources(generator.calls[0])] == [near.content]
+    retrieval = body["retrieval"]
+    assert (retrieval["retrieved_chunks"], retrieval["excluded_by_selection"]) == (2, 1)
+    assert retrieval["context_selection"] == "relative_margin"

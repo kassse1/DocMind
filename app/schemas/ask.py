@@ -80,6 +80,9 @@ class RetrievalInfo(BaseModel):
     top_k: int
     embedding_model: str
     retrieved_chunks: int
+    # Dropped by DOCMIND_RAG_CONTEXT_SELECTION before the token budget (0 with "rank").
+    excluded_by_selection: int = 0
+    context_selection: str = "rank"
     context_chunks: int
     excluded_empty: int
     excluded_over_budget: int

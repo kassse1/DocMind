@@ -38,6 +38,7 @@ from app.rag.context import GenerationContext, RetrievedChunk, build_context
 from app.rag.generation import ChatMessage, Generation, GenerationUnavailableError, Generator
 from app.rag.grounding import Abstention, AbstentionReason, GroundedAnswer, evaluate_reply
 from app.rag.prompt import build_messages
+from app.rag.selection import select_chunks
 from app.rag.tokens import TokenCounter
 from app.schemas.ask import AskRequest
 from app.schemas.search import HybridSearchRequest, SearchRequest
@@ -62,6 +63,8 @@ def generation_unavailable(message: str = "The answer generator is unavailable."
 class AskOutcome:
     result: GroundedAnswer | Abstention
     retrieved: int
+    # Retrieved chunks dropped by context selection before the budget was applied.
+    excluded_by_selection: int
     context: GenerationContext | None
     # Passage budget actually applied (configured budget, capped by the context window).
     token_budget: int
@@ -143,14 +146,18 @@ def ask(
     generation_ms: float | None = None
     model: str | None = None
     result: GroundedAnswer | Abstention
+    selected: list[RetrievedChunk] = []
     if not hits:
         result = Abstention(AbstentionReason.NO_RETRIEVED_CHUNKS)
     else:
+        selected = select_chunks(
+            hits, settings.rag_context_selection, settings.rag_similarity_margin
+        )
         if budget >= 1:
-            context = build_context(hits, counter, budget)
+            context = build_context(selected, counter, budget)
         else:
             # Instructions + question + reply alone fill the window: nothing fits.
-            context = GenerationContext((), budget, counter.name, 0, len(hits))
+            context = GenerationContext((), budget, counter.name, 0, len(selected))
         if not context.sources:
             result = Abstention(AbstentionReason.NO_ELIGIBLE_CONTEXT)
         else:
@@ -183,6 +190,7 @@ def ask(
     return AskOutcome(
         result=result,
         retrieved=len(hits),
+        excluded_by_selection=len(hits) - len(selected) if hits else 0,
         context=context,
         token_budget=budget,
         generation_model=model,
