@@ -11,6 +11,8 @@ from app.core.errors import AppError
 from app.embeddings.base import Embedder
 from app.ingestion.storage import FileStorage
 from app.models import User
+from app.rag.generation import Generator
+from app.rag.tokens import TokenCounter
 from app.services.users import get_or_create_user
 
 
@@ -20,6 +22,21 @@ def get_storage(request: Request) -> FileStorage:
 
 def get_embedder(request: Request) -> Embedder:
     return request.app.state.embedder
+
+
+def get_generator(request: Request) -> Generator:
+    generator = request.app.state.generator
+    if generator is None:
+        raise AppError(
+            "generation_unavailable",
+            "Answer generation is not configured on this server.",
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    return generator
+
+
+def get_token_counter(request: Request) -> TokenCounter:
+    return request.app.state.token_counter
 
 
 def get_current_user(

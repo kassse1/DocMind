@@ -12,6 +12,8 @@ from app.core.errors import register_exception_handlers
 from app.embeddings.factory import create_embedder
 from app.ingestion.storage import FileStorage
 from app.models import EMBEDDING_DIMENSION
+from app.rag.generation import create_generator
+from app.rag.tokens import create_token_counter
 
 
 @asynccontextmanager
@@ -19,6 +21,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     # Close pooled connections on shutdown. Schema is managed by Alembic, never create_all().
     app.state.engine.dispose()
+    if app.state.generator is not None:
+        app.state.generator.close()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -39,6 +43,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # One embedder per process, shared by all requests. The model itself loads lazily on
     # the first search, so startup and the other endpoints never wait for it.
     app.state.embedder = create_embedder(settings, EMBEDDING_DIMENSION)
+    # None when generation is disabled: /ask then answers 503 generation_unavailable.
+    # Creating a provider opens no connection; an unreachable server is reported per request.
+    app.state.generator = create_generator(settings)
+    app.state.token_counter = create_token_counter(settings)
 
     app.add_middleware(BodySizeLimitMiddleware, max_upload_bytes=settings.max_upload_bytes)
     register_exception_handlers(app)
