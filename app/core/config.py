@@ -149,6 +149,11 @@ class Settings(BaseSettings):
     rag_context_token_budget: int = Field(default=3000, ge=64, le=100_000)
 
     # Indexing worker (python -m app.worker).
+    # File touched every few seconds while the worker loop is alive; the container
+    # healthcheck (python -m app.worker healthcheck) reads its age. None = no heartbeat.
+    worker_heartbeat_file: Path | None = None
+    # Cleanup of expired sessions and rate-limit counters (app/services/maintenance.py).
+    maintenance_interval_s: int = Field(default=3600, ge=60)
     worker_poll_interval_s: float = Field(default=2.0, gt=0)
     # A running job whose worker has been silent this long is assumed dead and is reclaimed.
     job_lease_timeout_s: int = Field(default=1800, ge=10)

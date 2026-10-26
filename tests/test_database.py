@@ -65,14 +65,28 @@ def test_readiness_ok_when_ping_succeeds(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[int] = []
-    monkeypatch.setattr(health_module, "ping_database", lambda _engine, ms: calls.append(ms))
+    monkeypatch.setattr(
+        health_module, "ping_database", lambda _engine, ms: calls.append(ms) or True
+    )
 
     with _client(settings) as c:
         response = c.get("/api/v1/health/ready")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "checks": {"database": "ok"}}
+    assert response.json() == {"status": "ready", "checks": {"database": "ok", "schema": "ok"}}
     assert calls == [settings.db_readiness_timeout_ms]
+
+
+def test_readiness_fails_when_the_schema_is_outdated(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(health_module, "ping_database", lambda _engine, ms: False)
+    with _client(settings) as c:
+        response = c.get("/api/v1/health/ready")
+    assert response.status_code == 503
+    assert response.json()["error"]["details"] == {
+        "checks": {"database": "ok", "schema": "outdated"}
+    }
 
 
 def _request_with_session(session: MagicMock) -> MagicMock:

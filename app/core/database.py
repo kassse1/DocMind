@@ -48,11 +48,15 @@ def get_db_session(request: Request) -> Iterator[Session]:
         session.close()
 
 
-def ping_database(engine: Engine, timeout_ms: int) -> None:
-    """Run a trivial query with a server-side timeout. Raises on any failure."""
+def ping_database(engine: Engine, timeout_ms: int) -> bool:
+    """Run trivial queries with a server-side timeout; True when the schema is at the
+    Alembic head of this code. Raises on any connection failure."""
+    from app.core.schema import schema_is_current
+
     with engine.connect() as conn:
         # set_config(..., true) is transaction-local, so the timeout never leaks to pooled reuse.
         conn.execute(
             text("SELECT set_config('statement_timeout', :t, true)"), {"t": str(timeout_ms)}
         )
         conn.execute(text("SELECT 1"))
+        return schema_is_current(conn)

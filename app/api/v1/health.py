@@ -32,9 +32,11 @@ def readiness(
     settings: Annotated[Settings, Depends(get_settings)],
     engine: Annotated[Engine, Depends(get_engine)],
 ) -> ReadinessResponse:
-    """Readiness probe: can this instance serve traffic right now (database reachable)?"""
+    """Readiness probe: can this instance serve traffic right now? The database must be
+    reachable and at the schema version of this code. The LLM is deliberately not checked:
+    a generation outage only affects /ask (503 there), never search or uploads."""
     try:
-        ping_database(engine, settings.db_readiness_timeout_ms)
+        schema_current = ping_database(engine, settings.db_readiness_timeout_ms)
     except SQLAlchemyError as exc:
         # Log the class only: driver messages can include host, port and user names.
         logger.warning("Readiness check failed: database unavailable (%s)", type(exc).__name__)
@@ -44,4 +46,13 @@ def readiness(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             details={"checks": {"database": "unavailable"}},
         ) from None
-    return ReadinessResponse(status="ready", checks={"database": "ok"})
+    if not schema_current:
+        # Not migrated yet (or the code is older than the database): do not take traffic.
+        logger.warning("Readiness check failed: database schema is not at the expected head")
+        raise AppError(
+            "service_unavailable",
+            "Service is not ready",
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            details={"checks": {"database": "ok", "schema": "outdated"}},
+        )
+    return ReadinessResponse(status="ready", checks={"database": "ok", "schema": "ok"})
