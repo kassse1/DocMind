@@ -195,3 +195,28 @@ def test_server_truncation_is_reported_not_answered(
     assert response.json()["error"]["message"] == (
         "The model server truncated the prompt. Try again later."
     )
+
+
+LATE_FEE = (
+    "If payment is not received by the due date, a late fee of 1.5% of the outstanding "
+    "amount is charged for each month of delay."
+)
+
+
+def test_verified_mode_keeps_a_supported_answer(settings, pg_engine) -> None:
+    _seed(pg_engine, [PAYMENT])
+    strict = settings.model_copy(update={"rag_grounding_mode": "verified"})
+    body = _ask(strict, "How many days do I have to pay an invoice?").json()
+    assert body["abstained"] is False, body["abstention_reason"]
+    assert body["grounding"]["support_check"] == "model_assisted"
+    assert body["timing_ms"]["verification_ms"] > 0
+
+
+def test_verified_mode_rejects_a_rule_about_another_service(settings, pg_engine) -> None:
+    # Phase 7.1 failure: the late *payment* fee given for a late *delivery* question. Legacy
+    # mode may answer it; strict mode must not show it as an answer.
+    _seed(pg_engine, [LATE_FEE])
+    strict = settings.model_copy(update={"rag_grounding_mode": "verified"})
+    body = _ask(strict, "What late fee is charged when a delivery arrives late?").json()
+    assert body["abstained"] is True
+    assert body["answer"] is None
