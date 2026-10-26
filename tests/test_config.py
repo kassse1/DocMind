@@ -6,6 +6,7 @@ from app.core.config import Settings
 def test_env_prefix_is_applied(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DOCMIND_APP_NAME", "FromEnv")
     monkeypatch.setenv("DOCMIND_ENVIRONMENT", "prod")
+    monkeypatch.setenv("DOCMIND_JWT_SECRET_KEY", "x" * 32)
 
     settings = Settings(_env_file=None)
 

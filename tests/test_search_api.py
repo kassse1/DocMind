@@ -19,6 +19,7 @@ from app.models import EMBEDDING_DIMENSION, User
 from app.retrieval.vector_search import ChunkHit
 from app.schemas.search import MAX_TOP_K
 from app.services import search as search_service
+from tests.conftest import bearer
 
 URL = "/api/v1/search"
 USER = User(id=uuid.uuid4(), email="search@example.com")
@@ -168,8 +169,8 @@ def test_unavailable_model_is_503(app_and_client) -> None:
     assert "sentence_transformers" not in response.text
 
 
-def test_search_requires_authentication_in_prod(service_calls) -> None:
-    settings = Settings(_env_file=None, environment="prod")
+def test_search_requires_authentication(service_calls) -> None:
+    settings = Settings(_env_file=None, environment="prod", jwt_secret_key="x" * 32)
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_db_session] = lambda: None
@@ -248,8 +249,9 @@ def test_unreachable_database_is_503_without_leaking_credentials() -> None:
     )
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
+    # A valid token: the user lookup is what hits the unreachable database.
     with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.post(URL, json={"query": "q"})
+        response = client.post(URL, json={"query": "q"}, headers=bearer(app, uuid.uuid4()))
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "database_unavailable"

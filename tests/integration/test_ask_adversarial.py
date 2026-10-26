@@ -21,6 +21,7 @@ from app.models import EMBEDDING_DIMENSION, Document, DocumentChunk
 from app.rag.generation import ChatMessage, FakeGenerator
 from app.rag.verification import RELEVANCE_PROMPT, STATEMENT_PROMPT
 from app.services.users import get_or_create_user
+from tests.integration.conftest import authenticate
 
 pytestmark = pytest.mark.integration
 
@@ -57,7 +58,6 @@ def settings(test_database_url: str) -> Settings:
         database_url=test_database_url,
         embedding_backend="fake",
         generation_backend="fake",
-        dev_user_email=ALICE,
         rag_grounding_mode="verified",
         rag_context_selection="relative_margin",
     )
@@ -144,6 +144,7 @@ def _ask(settings: Settings, router: Router, **body) -> dict:
     app.state.embedder = AxisEmbedder(EMBEDDING_DIMENSION)
     app.state.generator = FakeGenerator(router)
     with TestClient(app, raise_server_exceptions=False) as client:
+        authenticate(client, ALICE)
         response = client.post(URL, json={"question": "How much is express delivery?", **body})
     assert response.status_code == 200, response.text
     return response.json()
@@ -231,6 +232,7 @@ def test_foreign_and_missing_documents_give_the_same_404_in_strict_mode(settings
     router = Router(reply("x", ("S1", "costs 3500 tenge")))
     app.state.generator = FakeGenerator(router)
     with TestClient(app, raise_server_exceptions=False) as client:
+        authenticate(client, ALICE)
         foreign = client.post(URL, json={"question": "q", "document_ids": [str(docs["bob"])]})
         missing = client.post(URL, json={"question": "q", "document_ids": [str(uuid.uuid4())]})
     assert foreign.status_code == missing.status_code == 404
@@ -244,6 +246,7 @@ def test_search_contracts_unchanged_with_phase_7_2_settings(settings, pg_engine)
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.embedder = AxisEmbedder(EMBEDDING_DIMENSION)
     with TestClient(app) as client:
+        authenticate(client, ALICE)
         semantic = client.post("/api/v1/search", json={"query": "q", "top_k": 10}).json()
         hybrid = client.post("/api/v1/search/hybrid", json={"query": "q"}).json()
     # Selection only applies to /ask: /search still returns every chunk of the caller.

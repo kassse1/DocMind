@@ -76,3 +76,28 @@ def expect_violation(session: Session, constraint: str, action: Callable[[], obj
         action()
     session.rollback()
     assert exc_info.value.orig.diag.constraint_name == constraint
+
+
+TEST_PASSWORD = "integration-test-passphrase"
+_password_hash: str | None = None
+
+
+def authenticate(client, email: str):
+    """Give a TestClient a real access token for `email` (created if needed, with a real
+    Argon2id hash), signed with the app's own key. Returns the client."""
+    from app.core.security import create_access_token, hash_password
+    from app.services.users import get_or_create_user
+
+    global _password_hash
+    if _password_hash is None:
+        _password_hash = hash_password(TEST_PASSWORD)
+    app = client.app
+    with app.state.session_factory() as session:
+        user = get_or_create_user(session, email)
+        if user.password_hash is None:
+            user.password_hash = _password_hash
+            session.commit()
+        user_id = user.id
+    token = create_access_token(user_id, app.state.token_settings)
+    client.headers["Authorization"] = f"Bearer {token}"
+    return client

@@ -28,12 +28,15 @@ class AppError(Exception):
         message: str,
         status_code: int = status.HTTP_400_BAD_REQUEST,
         details: Any = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.status_code = status_code
         self.details = details
+        # E.g. WWW-Authenticate on 401 responses.
+        self.headers = headers
 
 
 def error_body(code: str, message: str, details: Any = None) -> dict[str, Any]:
@@ -58,6 +61,7 @@ async def _app_error_handler(_: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content=error_body(exc.code, exc.message, exc.details),
+        headers=exc.headers,
     )
 
 

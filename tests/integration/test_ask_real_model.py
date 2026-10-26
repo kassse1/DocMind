@@ -25,6 +25,7 @@ from app.embeddings.fake import FakeEmbedder
 from app.main import create_app
 from app.models import EMBEDDING_DIMENSION, Document, DocumentChunk
 from app.services.users import get_or_create_user
+from tests.integration.conftest import authenticate
 
 pytestmark = [pytest.mark.integration, pytest.mark.llm]
 
@@ -74,7 +75,6 @@ def settings(test_database_url: str, server_context_length: int) -> Settings:
         environment="test",
         database_url=test_database_url,
         embedding_backend="fake",
-        dev_user_email=USER,
         generation_backend="openai-compatible",
         generation_base_url=BASE_URL,
         generation_model=MODEL,
@@ -129,6 +129,7 @@ def _ask(settings: Settings, question: str, top_k: int = 5) -> httpx.Response:
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.embedder = AxisEmbedder(EMBEDDING_DIMENSION)
     with TestClient(app, raise_server_exceptions=False) as client:
+        authenticate(client, USER)
         return client.post(URL, json={"question": question, "top_k": top_k})
 
 

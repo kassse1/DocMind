@@ -20,7 +20,10 @@ from app.ingestion.file_types import DOCX_MEDIA_TYPE
 from app.ingestion.storage import FileStorage
 from app.main import create_app
 from app.models import Document, DocumentStatus, User
+from tests.integration.conftest import authenticate
 from tests.samples import make_docx, make_pdf
+
+UPLOADER = "uploader@example.com"
 
 pytestmark = pytest.mark.integration
 
@@ -51,7 +54,7 @@ def client(test_database_url: str, pg_engine: Engine, storage_dir: Path) -> Iter
     app.dependency_overrides[get_settings] = lambda: settings
     _truncate(pg_engine)
     with TestClient(app, raise_server_exceptions=False) as c:
-        yield c
+        yield authenticate(c, UPLOADER)
     _truncate(pg_engine)
 
 
@@ -123,7 +126,8 @@ def test_upload_success_persists_row_and_file(
     assert str(row.id) == doc["id"]
     assert row.status is DocumentStatus.PENDING
     with Session(pg_engine) as session:
-        assert session.get(User, row.user_id).email == "dev@docmind.local"
+        # The owner is the authenticated user, from the token.
+        assert session.get(User, row.user_id).email == UPLOADER
 
     stored = FileStorage(storage_dir).path_for(row.id)
     assert _stored_files(storage_dir) == [stored]
@@ -265,7 +269,7 @@ def test_same_file_for_different_users_is_allowed(
 ) -> None:
     data = b"shared bytes"
     assert _upload(client, "a.txt", data).status_code == 201
-    # Re-own the first document so the dev user no longer has this hash.
+    # Re-own the first document so the uploader no longer has this hash.
     with pg_engine.begin() as conn:
         other_id = conn.execute(
             text(

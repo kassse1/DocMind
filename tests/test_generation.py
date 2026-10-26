@@ -152,7 +152,10 @@ def test_factory() -> None:
     remote.close()
     with pytest.raises(ValueError, match="not allowed in prod"):
         create_generator(
-            Settings(_env_file=None, environment="prod", generation_backend="fake")
+            Settings(
+                _env_file=None, environment="prod", generation_backend="fake",
+                jwt_secret_key="x" * 32,
+            )
         )
 
 

@@ -42,9 +42,14 @@ class Settings(BaseSettings):
     # Zip bomb guard: total uncompressed size of all members of a DOCX archive.
     max_docx_uncompressed_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
 
-    # Development-only identity until authentication exists (Phase 8). Ignored in prod,
-    # where document endpoints refuse requests instead of falling back to a shared user.
-    dev_user_email: str = "dev@docmind.local"
+    # Access tokens (app/core/security.py). The secret signs HS256 tokens: at least 32 bytes
+    # of random data, kept in .env or the environment, never in code. Required in prod; in
+    # dev/test an unset secret is replaced by a random per-process key (tokens then stop
+    # working at restart), never by a fixed default.
+    jwt_secret_key: SecretStr | None = None
+    jwt_issuer: str = "docmind"
+    jwt_audience: str = "docmind-api"
+    access_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
 
     # Embeddings. "fake" gives deterministic, meaningless vectors (tests/CI only).
     embedding_backend: Literal["sentence-transformers", "fake"] = "sentence-transformers"
@@ -120,6 +125,18 @@ class Settings(BaseSettings):
     def _check_chunking(self) -> "Settings":
         if self.chunk_overlap_tokens >= self.chunk_size_tokens:
             raise ValueError("chunk_overlap_tokens must be smaller than chunk_size_tokens")
+        return self
+
+    @model_validator(mode="after")
+    def _check_jwt_secret(self) -> "Settings":
+        # Imported here: security imports nothing from config, but keep config import-light.
+        from app.core.security import MIN_SECRET_BYTES
+
+        secret = self.jwt_secret_key
+        if secret is not None and len(secret.get_secret_value().encode()) < MIN_SECRET_BYTES:
+            raise ValueError(f"jwt_secret_key must be at least {MIN_SECRET_BYTES} bytes")
+        if secret is None and self.environment == "prod":
+            raise ValueError("jwt_secret_key is required when environment is prod")
         return self
 
 

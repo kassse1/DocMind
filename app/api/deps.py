@@ -3,17 +3,23 @@
 from typing import Annotated
 
 from fastapi import Depends, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
 from app.core.errors import AppError
+from app.core.security import TokenSettings
 from app.embeddings.base import Embedder
 from app.ingestion.storage import FileStorage
 from app.models import User
 from app.rag.generation import Generator
 from app.rag.tokens import TokenCounter
-from app.services.users import get_or_create_user
+from app.services import auth as auth_service
+
+# auto_error=False: missing or non-Bearer credentials get the DocMind error envelope (401
+# with WWW-Authenticate) instead of FastAPI's default 403. Also documents the scheme in
+# OpenAPI ("Authorize" button in /docs).
+_bearer = HTTPBearer(auto_error=False, bearerFormat="JWT")
 
 
 def get_storage(request: Request) -> FileStorage:
@@ -39,20 +45,21 @@ def get_token_counter(request: Request) -> TokenCounter:
     return request.app.state.token_counter
 
 
-def get_current_user(
-    session: Annotated[Session, Depends(get_db_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> User:
-    """DEVELOPMENT ONLY: every request acts as the single configured dev user.
+def get_token_settings(request: Request) -> TokenSettings:
+    return request.app.state.token_settings
 
-    Phase 8 replaces this function with real authentication; endpoints already depend on
-    it, so ownership checks will not need to change. In prod it refuses every request
-    rather than letting all callers share one account.
+
+def get_current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    session: Annotated[Session, Depends(get_db_session)],
+    token_settings: Annotated[TokenSettings, Depends(get_token_settings)],
+) -> User:
+    """The authenticated user, from a validated Bearer access token only.
+
+    The single source of identity for every protected route: services receive this User
+    and scope every query to user.id. Nothing in the path, query, body or other headers
+    can name or override the user.
     """
-    if settings.environment == "prod":
-        raise AppError(
-            "authentication_required",
-            "Authentication is not configured",
-            status.HTTP_401_UNAUTHORIZED,
-        )
-    return get_or_create_user(session, settings.dev_user_email)
+    if credentials is None or not credentials.credentials:
+        raise auth_service.missing_credentials()
+    return auth_service.user_from_token(session, credentials.credentials, token_settings)

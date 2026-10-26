@@ -19,6 +19,8 @@ from app.embeddings.fake import FakeEmbedder
 from app.main import create_app
 from app.models import EMBEDDING_DIMENSION, Document, DocumentChunk
 from app.services.users import get_or_create_user
+from tests.conftest import bearer
+from tests.integration.conftest import authenticate
 
 pytestmark = pytest.mark.integration
 
@@ -51,7 +53,6 @@ def settings(test_database_url: str) -> Settings:
         environment="test",
         database_url=test_database_url,
         embedding_backend="fake",
-        dev_user_email=ALICE,
     )
 
 
@@ -66,11 +67,11 @@ def clean(pg_engine: Engine) -> Iterator[None]:
     truncate()
 
 
-def _client(settings: Settings) -> TestClient:
+def _client(settings: Settings, email: str = ALICE) -> TestClient:
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.embedder = AxisEmbedder(EMBEDDING_DIMENSION)
-    return TestClient(app, raise_server_exceptions=False)
+    return authenticate(TestClient(app, raise_server_exceptions=False), email)
 
 
 def _seed(
@@ -229,7 +230,7 @@ def test_two_users_are_isolated_in_both_branches(settings, pg_engine) -> None:
     assert codes == {"document_not_found"}
     assert "bob" not in foreign.text.replace(str(bob_doc), "")
 
-    with _client(settings.model_copy(update={"dev_user_email": BOB})) as bob:
+    with _client(settings, email=BOB) as bob:
         assert [r["content"] for r in _post(bob, query="invoice")["results"]] == [
             "secret invoice of bob"
         ]
@@ -272,7 +273,9 @@ def test_unreachable_database_is_503() -> None:
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.post(URL, json={"query": "q", "mode": "full_text"})
+        response = client.post(
+            URL, json={"query": "q", "mode": "full_text"}, headers=bearer(app, uuid.uuid4())
+        )
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "database_unavailable"
     assert "SECRETPW" not in response.text

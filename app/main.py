@@ -1,6 +1,8 @@
 import logging
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from fastapi import FastAPI
 
@@ -9,6 +11,7 @@ from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.database import create_db_engine, create_session_factory
 from app.core.errors import register_exception_handlers
+from app.core.security import TokenSettings
 from app.embeddings.factory import create_embedder
 from app.ingestion.storage import FileStorage
 from app.models import EMBEDDING_DIMENSION
@@ -23,6 +26,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine.dispose()
     if app.state.generator is not None:
         app.state.generator.close()
+
+
+def _token_settings(settings: Settings) -> TokenSettings:
+    if settings.jwt_secret_key is not None:
+        secret = settings.jwt_secret_key.get_secret_value()
+    else:
+        # dev/test only (Settings refuses prod without a secret): a random key per process.
+        # Never a fixed default, so a forgotten configuration cannot produce forgeable tokens.
+        secret = secrets.token_urlsafe(48)
+        logging.getLogger(__name__).warning(
+            "DOCMIND_JWT_SECRET_KEY is not set: using a random per-process signing key; "
+            "tokens become invalid when the process restarts"
+        )
+    return TokenSettings(
+        secret=secret,
+        issuer=settings.jwt_issuer,
+        audience=settings.jwt_audience,
+        ttl=timedelta(minutes=settings.access_token_ttl_minutes),
+    )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -47,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Creating a provider opens no connection; an unreachable server is reported per request.
     app.state.generator = create_generator(settings)
     app.state.token_counter = create_token_counter(settings)
+    app.state.token_settings = _token_settings(settings)
 
     app.add_middleware(BodySizeLimitMiddleware, max_upload_bytes=settings.max_upload_bytes)
     register_exception_handlers(app)

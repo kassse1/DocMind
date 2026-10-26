@@ -22,6 +22,7 @@ from app.main import create_app
 from app.models import EMBEDDING_DIMENSION, Document, DocumentChunk
 from app.services.indexing import DocumentIndexer
 from app.services.users import get_or_create_user
+from tests.integration.conftest import authenticate
 
 pytestmark = pytest.mark.integration
 
@@ -59,7 +60,6 @@ def settings(test_database_url: str, tmp_path: Path) -> Settings:
         database_url=test_database_url,
         storage_dir=tmp_path / "storage",
         embedding_backend="fake",
-        dev_user_email=ALICE,
         chunk_size_tokens=16,
         chunk_overlap_tokens=4,
     )
@@ -72,12 +72,12 @@ def clean(pg_engine: Engine) -> Iterator[None]:
     _truncate(pg_engine)
 
 
-def _client(settings: Settings, embedder=None) -> TestClient:
+def _client(settings: Settings, embedder=None, email: str = ALICE) -> TestClient:
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     if embedder is not None:
         app.state.embedder = embedder
-    return TestClient(app, raise_server_exceptions=False)
+    return authenticate(TestClient(app, raise_server_exceptions=False), email)
 
 
 def _seed(pg_engine: Engine, email: str, filename: str, vectors: list[np.ndarray]) -> uuid.UUID:
@@ -164,8 +164,7 @@ def test_users_only_see_their_own_documents(settings, pg_engine, clean) -> None:
         assert foreign.json()["error"]["code"] == "document_not_found"
         assert "bob-private" not in foreign.text
 
-    bob_settings = settings.model_copy(update={"dev_user_email": BOB})
-    with _client(bob_settings, embedder) as bob:
+    with _client(settings, embedder, email=BOB) as bob:
         results = bob.post(URL, json={"query": "a"}).json()["results"]
         assert [r["filename"] for r in results] == ["bob-private.txt"]
 

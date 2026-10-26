@@ -24,6 +24,8 @@ from app.rag.context import serialize_entry
 from app.rag.generation import ChatMessage, FakeGenerator
 from app.rag.tokens import Utf8ByteCounter
 from app.services.users import get_or_create_user
+from tests.conftest import bearer
+from tests.integration.conftest import authenticate
 
 pytestmark = pytest.mark.integration
 
@@ -53,7 +55,6 @@ def settings(test_database_url: str) -> Settings:
         database_url=test_database_url,
         embedding_backend="fake",
         generation_backend="fake",
-        dev_user_email=ALICE,
     )
 
 
@@ -68,13 +69,15 @@ def clean(pg_engine: Engine) -> Iterator[None]:
     truncate()
 
 
-def _client(settings: Settings, generator: FakeGenerator | None = None) -> TestClient:
+def _client(
+    settings: Settings, generator: FakeGenerator | None = None, email: str = ALICE
+) -> TestClient:
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.embedder = AxisEmbedder(EMBEDDING_DIMENSION)
     if generator is not None:
         app.state.generator = generator
-    return TestClient(app, raise_server_exceptions=False)
+    return authenticate(TestClient(app, raise_server_exceptions=False), email)
 
 
 def _seed(
@@ -400,8 +403,11 @@ def test_database_unavailable_returns_503() -> None:
         database_url="postgresql+psycopg://docmind:SECRETPW@127.0.0.1:1/docmind_test",
         db_connect_timeout_s=1,
     )
-    with _client(settings) as client:
-        response = client.post(URL, json={"question": "q"})
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    # A valid token: the user lookup is what hits the unreachable database.
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(URL, json={"question": "q"}, headers=bearer(app, uuid.uuid4()))
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "database_unavailable"
     assert "SECRETPW" not in response.text
