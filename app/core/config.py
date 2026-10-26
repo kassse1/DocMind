@@ -66,6 +66,24 @@ class Settings(BaseSettings):
     # the TCP peer is the client and X-Forwarded-For is ignored (app/core/client_ip.py).
     trusted_proxies: str = ""
 
+    # HTTP hardening (app/main.py). Comma-separated lists; empty = feature off.
+    # Host headers accepted; REQUIRED in prod (e.g. "docmind.example.com,localhost").
+    allowed_hosts: str = ""
+    # Browser origins allowed to call the API (CORS). Empty = no CORS headers at all.
+    cors_allowed_origins: str = ""
+    # Strict-Transport-Security; enable only behind an HTTPS reverse proxy.
+    hsts_enabled: bool = False
+    # Interactive docs (/docs, /redoc, /openapi.json). None = on except in prod.
+    docs_enabled: bool | None = None
+
+    @staticmethod
+    def split(value: str) -> list[str]:
+        return [part.strip() for part in value.split(",") if part.strip()]
+
+    @property
+    def docs_on(self) -> bool:
+        return self.docs_enabled if self.docs_enabled is not None else self.environment != "prod"
+
     # Embeddings. "fake" gives deterministic, meaningless vectors (tests/CI only).
     embedding_backend: Literal["sentence-transformers", "fake"] = "sentence-transformers"
     embedding_model: str = "intfloat/multilingual-e5-small"
@@ -153,6 +171,18 @@ class Settings(BaseSettings):
         ):
             Limit.parse(getattr(self, name))
         parse_networks(self.trusted_proxies)
+        return self
+
+    @model_validator(mode="after")
+    def _check_prod_hardening(self) -> "Settings":
+        if self.environment == "prod":
+            if self.debug:
+                raise ValueError("debug must be false when environment is prod")
+            hosts = self.split(self.allowed_hosts)
+            if not hosts or "*" in hosts:
+                raise ValueError("allowed_hosts must list explicit host names in prod")
+            if "*" in self.split(self.cors_allowed_origins):
+                raise ValueError("cors_allowed_origins must not be '*' in prod")
         return self
 
     @model_validator(mode="after")

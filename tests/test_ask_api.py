@@ -352,7 +352,7 @@ def test_database_failure_is_503(api, monkeypatch) -> None:
 def test_prod_requires_authentication(searches) -> None:
     settings = Settings(
         _env_file=None, environment="prod", generation_backend="openai-compatible",
-        jwt_secret_key="x" * 32,
+        jwt_secret_key="x" * 32, allowed_hosts="testserver",
     )
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings

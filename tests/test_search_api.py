@@ -170,7 +170,9 @@ def test_unavailable_model_is_503(app_and_client) -> None:
 
 
 def test_search_requires_authentication(service_calls) -> None:
-    settings = Settings(_env_file=None, environment="prod", jwt_secret_key="x" * 32)
+    settings = Settings(
+        _env_file=None, environment="prod", jwt_secret_key="x" * 32, allowed_hosts="testserver"
+    )
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_db_session] = lambda: None

@@ -114,8 +114,10 @@ def test_secret_policy() -> None:
     with pytest.raises(ValidationError, match="at least 32 bytes"):
         Settings(_env_file=None, jwt_secret_key="short")
     with pytest.raises(ValidationError, match="required when environment is prod"):
-        Settings(_env_file=None, environment="prod")
-    assert Settings(_env_file=None, environment="prod", jwt_secret_key="x" * 32)
+        Settings(_env_file=None, environment="prod", allowed_hosts="api.example.com")
+    assert Settings(
+        _env_file=None, environment="prod", jwt_secret_key="x" * 32, allowed_hosts="testserver"
+    )
     # dev/test without a secret: a random key per app, never a fixed default.
     first = create_app(Settings(_env_file=None, environment="test")).state.token_settings
     second = create_app(Settings(_env_file=None, environment="test")).state.token_settings

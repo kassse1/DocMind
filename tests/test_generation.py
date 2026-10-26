@@ -154,7 +154,7 @@ def test_factory() -> None:
         create_generator(
             Settings(
                 _env_file=None, environment="prod", generation_backend="fake",
-                jwt_secret_key="x" * 32,
+                jwt_secret_key="x" * 32, allowed_hosts="testserver",
             )
         )
 

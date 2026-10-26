@@ -5,12 +5,15 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.router import api_router
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.database import create_db_engine, create_session_factory
 from app.core.errors import register_exception_handlers
+from app.core.http_security import SecurityHeadersMiddleware
 from app.core.security import TokenSettings
 from app.embeddings.factory import create_embedder
 from app.ingestion.storage import FileStorage
@@ -52,11 +55,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=settings.log_level)
 
+    docs = settings.docs_on
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.debug,
         lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
     )
     # Engine creation is lazy (no connection yet), so the app starts even if the DB is down.
     app.state.engine = create_db_engine(settings)
@@ -71,7 +78,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.token_counter = create_token_counter(settings)
     app.state.token_settings = _token_settings(settings)
 
+    # Added innermost first: the last one added sees the request first.
     app.add_middleware(BodySizeLimitMiddleware, max_upload_bytes=settings.max_upload_bytes)
+    if origins := settings.split(settings.cors_allowed_origins):
+        # Bearer tokens in headers, no cookies: credentials stay off.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["GET", "POST", "DELETE"],
+            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+            expose_headers=["X-Request-ID", "Retry-After"],
+        )
+    if hosts := settings.split(settings.allowed_hosts):
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
+    app.add_middleware(
+        SecurityHeadersMiddleware, api_prefix=settings.api_v1_prefix, hsts=settings.hsts_enabled
+    )
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     return app

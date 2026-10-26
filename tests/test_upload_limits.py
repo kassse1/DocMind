@@ -84,7 +84,7 @@ def test_oversized_chunked_body_rejected_while_streaming(
 def test_uploads_require_authentication(storage_dir: Path) -> None:
     settings = Settings(
         _env_file=None, environment="prod", database_url=UNREACHABLE_DB, storage_dir=storage_dir,
-        jwt_secret_key="x" * 32,
+        jwt_secret_key="x" * 32, allowed_hosts="testserver",
     )
     with _client(settings) as c:
         response = c.post(URL, files={"file": ("a.txt", b"hello", "text/plain")})

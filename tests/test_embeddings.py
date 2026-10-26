@@ -66,7 +66,8 @@ def test_factory_builds_fake_backend() -> None:
 
 def test_factory_refuses_fake_backend_in_prod() -> None:
     settings = Settings(
-        _env_file=None, environment="prod", embedding_backend="fake", jwt_secret_key="x" * 32
+        _env_file=None, environment="prod", embedding_backend="fake", jwt_secret_key="x" * 32,
+        allowed_hosts="testserver",
     )
     with pytest.raises(ValueError, match="not allowed in prod"):
         create_embedder(settings, DIM)
