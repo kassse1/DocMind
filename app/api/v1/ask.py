@@ -12,6 +12,7 @@ from app.models import User
 from app.rag.generation import Generator
 from app.rag.grounding import GROUNDING_POLICY, Abstention, GroundedAnswer
 from app.rag.tokens import TokenCounter
+from app.rag.verification import VERIFIER_PROMPT_VERSION
 from app.schemas.ask import (
     AskRequest,
     AskResponse,
@@ -107,12 +108,16 @@ def ask(
             outcome, body, embedder, counter, settings.rag_context_selection
         ),
         "generation_model": outcome.generation_model,
+        "generation_attempts": outcome.generation_attempts,
         "prompt_version": settings.rag_prompt_version,
         "timing_ms": Timing(
             retrieval_ms=round(outcome.retrieval_ms, 1),
             generation_ms=None
             if outcome.generation_ms is None
             else round(outcome.generation_ms, 1),
+            verification_ms=None
+            if outcome.verification_ms is None
+            else round(outcome.verification_ms, 1),
             total_ms=round(outcome.total_ms, 1),
         ),
     }
@@ -136,6 +141,8 @@ def ask(
             citation_ids_valid=True,
             quotes_verified=True,
             numbers_verified=True,
+            support_check="not_run" if outcome.support is None else "model_assisted",
+            support_check_version=None if outcome.support is None else VERIFIER_PROMPT_VERSION,
         ),
         **common,
     )

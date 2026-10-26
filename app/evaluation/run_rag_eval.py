@@ -68,6 +68,7 @@ from app.rag.generation import (
 )
 from app.rag.grounding import GROUNDING_POLICY, Abstention, locate_quote, parse_reply
 from app.rag.tokens import TokenCounter, create_token_counter
+from app.rag.verification import VERIFIER_PROMPT_VERSION
 from app.schemas.ask import AskRequest
 from app.schemas.search import MAX_TOP_K, SearchRequest
 from app.services import ask as ask_service
@@ -209,6 +210,9 @@ def aggregate(records: list[dict[str, Any]], real: bool) -> dict[str, Any]:
             [r["generation_ms"] for r in records if r["generation_ms"] is not None]
         ),
         "total": _latency([r["total_ms"] for r in records]),
+        "verification": _latency(
+            [r["verification_ms"] for r in records if r.get("verification_ms") is not None]
+        ),
     }
 
     expect_answer = [r for r in records if r["expects_answer"]]
@@ -244,6 +248,11 @@ def aggregate(records: list[dict[str, Any]], real: bool) -> dict[str, Any]:
         "answers_citing_injected_passage": _ratio(
             sum(r["cited_injected"] for r in all_answered), len(all_answered)
         ),
+        "answers_rejected_by_support_check": sum(
+            (r.get("support") or {}).get("verdict") in ("unsupported", "inconclusive")
+            for r in records
+        ),
+        "contract_retries": sum(max(r.get("generation_attempts", 1) - 1, 0) for r in records),
         "raw_reply_contract_rate": _ratio(sum(s["parsed"] for s in raw), len(raw)),
         "raw_citation_id_validity": _ratio(
             sum(s["valid_ids"] for s in raw), sum(s["citations"] for s in raw)
@@ -340,6 +349,8 @@ def evaluate(
                 else set()
             )
             answer = outcome.result.answer if answered else None
+            rejected = outcome.rejected_answer
+            support = outcome.support
             raw = recorder.replies[before] if len(recorder.replies) > before else None
             records.append(
                 {
@@ -374,14 +385,37 @@ def evaluate(
                     "retrieval_ms": outcome.retrieval_ms,
                     "generation_ms": outcome.generation_ms,
                     "total_ms": outcome.total_ms,
+                    "generation_attempts": outcome.generation_attempts,
+                    "verification_ms": outcome.verification_ms,
+                    "support": None
+                    if support is None
+                    else {
+                        "verdict": support.verdict,
+                        "answers_question": support.answers_question,
+                        "is_instruction": support.is_instruction,
+                        "statement_supported": support.statement_supported,
+                    },
+                    # What the support check rejected, for judging its false negatives.
+                    "rejected_answer": rejected.answer if rejected else None,
+                    "rejected_cited": sorted(
+                        passage_of[(c.source.document_id, c.source.chunk_index)]
+                        for c in rejected.citations
+                    )
+                    if rejected
+                    else [],
                 }
             )
 
         questions = {q.id: q for q in dataset.questions}
+        # Scripted cases and the isolation check exercise the deterministic validator: run
+        # them in legacy mode, without the model-assisted check or retries.
+        legacy = settings.model_copy(
+            update={"rag_grounding_mode": "legacy", "generation_max_attempts": 1}
+        )
         for case in dataset.citation_cases:
             question = questions[case.question]
             outcome = _ask(
-                session, embedder, FakeGenerator(scripted_reply(case.id)), counter, settings,
+                session, embedder, FakeGenerator(scripted_reply(case.id)), counter, legacy,
                 owner, question.text, top_k, scope(question),
             )
             got = (
@@ -396,7 +430,7 @@ def evaluate(
         # Owner isolation: unfiltered questions never put the stranger's copies in context.
         for question in dataset.questions:
             outcome = _ask(
-                session, embedder, FakeGenerator(), counter, settings, owner, question.text,
+                session, embedder, FakeGenerator(), counter, legacy, owner, question.text,
                 top_k, None,
             )
             if outcome.context and any(s.document_id not in own for s in outcome.context.sources):
@@ -472,6 +506,11 @@ def run(
             "context_token_budget": settings.rag_context_token_budget,
             "generation_context_window": settings.generation_context_window,
             "context_selection": settings.rag_context_selection,
+            "grounding_mode": settings.rag_grounding_mode,
+            "support_check_version": VERIFIER_PROMPT_VERSION
+            if settings.rag_grounding_mode == "verified"
+            else None,
+            "generation_max_attempts": settings.generation_max_attempts,
             "similarity_margin": settings.rag_similarity_margin,
             "generation_max_output_tokens": settings.generation_max_output_tokens,
             "token_counter": counter.name,

@@ -14,6 +14,17 @@ Outcomes:
   it reports a prompt shorter than what was sent, i.e. it truncated it. Distinct from
   abstention: the system failed, it did not decide the documents lack the answer.
 
+Strict grounding (DOCMIND_RAG_GROUNDING_MODE=verified): an answer that passed the checks
+above also goes through the model-assisted support check (app/rag/verification.py, two more
+model calls); "unsupported" abstains with unsupported_claim, "inconclusive" with
+verification_inconclusive (fail closed). A provider failure during it is a 503, as for the
+answer itself. Legacy mode skips it and behaves exactly as in Phase 7.1.
+
+Retries (DOCMIND_GENERATION_MAX_ATTEMPTS > 1): only a reply that breaks the JSON contract
+(malformed or empty) is retried, with a short correction appended; every retried reply is
+validated from scratch, so a retry can never bypass a check. Provider failures are never
+retried here.
+
 Context window: the passage budget is the smaller of DOCMIND_RAG_CONTEXT_TOKEN_BUDGET and
 what is left of DOCMIND_GENERATION_CONTEXT_WINDOW after the reply (max output tokens), the
 instructions, the question and a reserve for the chat template. A prompt larger than the
@@ -40,6 +51,12 @@ from app.rag.grounding import Abstention, AbstentionReason, GroundedAnswer, eval
 from app.rag.prompt import build_messages
 from app.rag.selection import select_chunks
 from app.rag.tokens import TokenCounter
+from app.rag.verification import (
+    SupportCheck,
+    build_relevance_messages,
+    build_statement_messages,
+    combine,
+)
 from app.schemas.ask import AskRequest
 from app.schemas.search import HybridSearchRequest, SearchRequest
 from app.services import search as search_service
@@ -51,6 +68,13 @@ logger = logging.getLogger(__name__)
 # margin for other templates and for the separators between serialized sources.
 TEMPLATE_RESERVE_TOKENS = 64
 _NO_SOURCES = GenerationContext((), 1, "", 0, 0)
+_RETRYABLE = frozenset(
+    {AbstentionReason.MALFORMED_MODEL_OUTPUT, AbstentionReason.EMPTY_MODEL_OUTPUT}
+)
+CORRECTION_MESSAGE = (
+    'Your previous reply was not one valid JSON object with the keys "citations", "answer" '
+    'and "status". Reply again with exactly one such JSON object and nothing else.'
+)
 
 
 def generation_unavailable(message: str = "The answer generator is unavailable.") -> AppError:
@@ -72,6 +96,14 @@ class AskOutcome:
     retrieval_ms: float
     generation_ms: float | None
     total_ms: float
+    # Calls for the answer itself (0 = model not called; > 1 = contract retries).
+    generation_attempts: int = 0
+    # Strict mode only; None when the support check did not run.
+    support: SupportCheck | None = None
+    verification_ms: float | None = None
+    # The grounded answer the support check rejected (evaluation only; never returned by
+    # the API, which shows an abstention).
+    rejected_answer: GroundedAnswer | None = None
 
 
 def _retrieve(
@@ -95,6 +127,9 @@ def passage_budget(settings: Settings, counter: TokenCounter, question: str) -> 
     """Tokens available for passages; <= 0 when even an empty context does not fit."""
     messages = build_messages(question, _NO_SOURCES, settings.rag_prompt_version)
     fixed = sum(counter.count(m.content) for m in messages)
+    if settings.generation_max_attempts > 1:
+        # A retry adds the correction message (plus its template tokens) to the prompt.
+        fixed += counter.count(CORRECTION_MESSAGE) + 16
     left = (
         settings.generation_context_window
         - settings.generation_max_output_tokens
@@ -122,6 +157,27 @@ def _check_not_truncated(
         raise generation_unavailable("The model server truncated the prompt.")
 
 
+def _generate(
+    generator: Generator, counter: TokenCounter, messages: Sequence[ChatMessage]
+) -> Generation:
+    try:
+        generation = generator.generate(messages)
+    except GenerationUnavailableError:
+        raise generation_unavailable() from None
+    _check_not_truncated(counter, messages, generation)
+    return generation
+
+
+def _verify(
+    generator: Generator, counter: TokenCounter, question: str, answer: GroundedAnswer
+) -> SupportCheck:
+    """Two model calls; their prompts hold only the question, the answer and the cited
+    passages, all smaller than the answer prompt, so they fit the same window."""
+    relevance = _generate(generator, counter, build_relevance_messages(question, answer))
+    statement = _generate(generator, counter, build_statement_messages(answer))
+    return combine(relevance.text, statement.text)
+
+
 def ask(
     session: Session,
     embedder: Embedder,
@@ -147,6 +203,10 @@ def ask(
     model: str | None = None
     result: GroundedAnswer | Abstention
     selected: list[RetrievedChunk] = []
+    attempts = 0
+    support: SupportCheck | None = None
+    verification_ms: float | None = None
+    rejected: GroundedAnswer | None = None
     if not hits:
         result = Abstention(AbstentionReason.NO_RETRIEVED_CHUNKS)
     else:
@@ -163,19 +223,32 @@ def ask(
         else:
             messages = build_messages(request.question, context, settings.rag_prompt_version)
             generation_started = time.monotonic()
-            try:
-                generation = generator.generate(messages)
-            except GenerationUnavailableError:
-                raise generation_unavailable() from None
+            while True:
+                attempts += 1
+                generation = _generate(generator, counter, messages)
+                result = evaluate_reply(generation.text, context)
+                retry = isinstance(result, Abstention) and result.reason in _RETRYABLE
+                if not retry or attempts >= settings.generation_max_attempts:
+                    break
+                messages = [*messages, ChatMessage("user", CORRECTION_MESSAGE)]
             generation_ms = (time.monotonic() - generation_started) * 1000
             model = generator.model_name
-            _check_not_truncated(counter, messages, generation)
-            result = evaluate_reply(generation.text, context)
+            if settings.rag_grounding_mode == "verified" and isinstance(result, GroundedAnswer):
+                verification_started = time.monotonic()
+                support = _verify(generator, counter, request.question, result)
+                verification_ms = (time.monotonic() - verification_started) * 1000
+                if support.verdict != "supported":
+                    rejected = result
+                    result = Abstention(
+                        AbstentionReason.UNSUPPORTED_CLAIM
+                        if support.verdict == "unsupported"
+                        else AbstentionReason.VERIFICATION_INCONCLUSIVE
+                    )
 
     total_ms = (time.monotonic() - started) * 1000
     logger.info(
         "Ask: user=%s mode=%s top_k=%d filtered=%s retrieved=%d context=%d outcome=%s "
-        "retrieval_ms=%.1f generation_ms=%s total_ms=%.1f",
+        "attempts=%d support=%s retrieval_ms=%.1f generation_ms=%s total_ms=%.1f",
         user.id,
         request.retrieval_mode,
         request.top_k,
@@ -183,6 +256,8 @@ def ask(
         len(hits),
         len(context.sources) if context else 0,
         result.reason if isinstance(result, Abstention) else "answered",
+        attempts,
+        support.verdict if support else "-",
         retrieval_ms,
         f"{generation_ms:.1f}" if generation_ms is not None else "-",
         total_ms,
@@ -197,4 +272,8 @@ def ask(
         retrieval_ms=retrieval_ms,
         generation_ms=generation_ms,
         total_ms=total_ms,
+        generation_attempts=attempts,
+        support=support,
+        verification_ms=verification_ms,
+        rejected_answer=rejected,
     )

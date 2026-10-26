@@ -148,7 +148,11 @@ def test_grounded_answer_with_citation_metadata(app, api, searches, session) -> 
         "quotes_verified": True,
         "numbers_verified": True,
         "entailment_verified": False,
+        # Legacy grounding mode (the default): no model-assisted support check.
+        "support_check": "not_run",
+        "support_check_version": None,
     }
+    assert body["generation_attempts"] == 1
     retrieval = body["retrieval"]
     assert (retrieval["mode"], retrieval["top_k"], retrieval["retrieved_chunks"]) == (
         "semantic", 4, 2,

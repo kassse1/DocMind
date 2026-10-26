@@ -30,7 +30,7 @@ class GenerationUnavailableError(Exception):
 
 @dataclass(frozen=True)
 class ChatMessage:
-    role: Literal["system", "user"]
+    role: Literal["system", "user", "assistant"]
     content: str
 
 

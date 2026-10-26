@@ -73,6 +73,13 @@ class Grounding(BaseModel):
         default=False,
         description="Always false: nothing proves the answer follows from the quotes.",
     )
+    support_check: Literal["not_run", "model_assisted"] = Field(
+        default="not_run",
+        description="model_assisted: a second model pass judged the cited passages to answer "
+        "the question and to state the answer (DOCMIND_RAG_GROUNDING_MODE=verified). A "
+        "fallible model judgment, not a proof.",
+    )
+    support_check_version: str | None = None
 
 
 class RetrievalInfo(BaseModel):
@@ -94,6 +101,9 @@ class RetrievalInfo(BaseModel):
 class Timing(BaseModel):
     retrieval_ms: float
     generation_ms: float | None = Field(description="null when the model was not called")
+    verification_ms: float | None = Field(
+        default=None, description="Support check; null unless grounding mode is verified"
+    )
     total_ms: float
 
 
@@ -108,5 +118,8 @@ class AskResponse(BaseModel):
     grounding: Grounding | None = Field(description="null when abstained")
     retrieval: RetrievalInfo
     generation_model: str | None = Field(description="null when the model was not called")
+    generation_attempts: int = Field(
+        default=0, description="Model calls for the answer (retries after a broken reply)"
+    )
     prompt_version: str
     timing_ms: Timing

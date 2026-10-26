@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     # System prompt version (app/rag/prompt.py); reported in every /ask response. v2 is the
     # default after the held-out comparison with qwen2.5:3b-instruct (see README).
     rag_prompt_version: Literal["grounded-qa-v1", "grounded-qa-v2"] = "grounded-qa-v2"
+    # "legacy" = Phase 7.1 grounding checks only. "verified" = additionally the
+    # model-assisted support check (app/rag/verification.py, two extra model calls); an
+    # unsupported or inconclusive verdict abstains. Legacy checks run in both modes.
+    rag_grounding_mode: Literal["legacy", "verified"] = "legacy"
+    # Model calls per answer when the reply breaks the JSON contract (1 = no retry). A retry
+    # appends a short correction and is validated like the first reply.
+    generation_max_attempts: int = Field(default=1, ge=1, le=3)
     # Which retrieved chunks reach the prompt (app/rag/selection.py): "rank" = all of them
     # (Phase 7.1), "relative_margin" = only those within rag_similarity_margin of the best.
     rag_context_selection: Literal["rank", "relative_margin"] = "rank"

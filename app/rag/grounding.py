@@ -49,6 +49,10 @@ class AbstentionReason(enum.StrEnum):
     INVALID_CITATION = "invalid_citation"
     UNVERIFIED_QUOTE = "unverified_quote"
     UNSUPPORTED_NUMBER = "unsupported_number"
+    # Strict grounding mode only (app/rag/verification.py): the model-assisted support
+    # check judged the answer unsupported, or could not reach a verdict (fail closed).
+    UNSUPPORTED_CLAIM = "unsupported_claim"
+    VERIFICATION_INCONCLUSIVE = "verification_inconclusive"
 
 
 class _ModelCitation(BaseModel):
