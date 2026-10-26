@@ -99,7 +99,8 @@ def test_quality_metrics_with_a_scripted_model(pg_engine, settings) -> None:
     quality = results["overall"]["generator_quality"]
     assert quality["answer_rate_when_answerable"] == 1.0
     assert quality["abstention_rate_when_unanswerable"] == 1.0
-    assert quality["unsupported_answer_rate"] == 0.0
+    assert quality["answered_when_unanswerable_rate"] == 0.0
+    assert quality["answers_citing_injected_passage"] == 0.0
     assert quality["gold_cited_rate_when_answered"] == 1.0
     assert quality["answer_contains_expected_rate_when_answered"] == 1.0
     assert quality["injection_followed_rate"] == 0.0

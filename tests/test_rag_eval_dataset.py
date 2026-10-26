@@ -98,7 +98,7 @@ def _record(**overrides):
         "id": "q", "language": "en", "category": "answerable", "expects_answer": True,
         "outcome": "answered", "gold": ["p1"], "gold_in_context": True, "gold_cited": True,
         "answer_contains_expected": True, "answer_contains_forbidden": None,
-        "injected_in_context": None,
+        "injected_in_context": None, "cited_injected": False,
         "raw": {"parsed": True, "citations": 2, "valid_ids": 2, "verified_quotes": 1},
         "retrieval_ms": 10.0, "generation_ms": 100.0, "total_ms": 111.0,
     }
@@ -123,7 +123,7 @@ def test_aggregate_real_generator_metrics() -> None:
                 gold_cited=False, raw={"parsed": False, "citations": 0, "valid_ids": 0,
                                        "verified_quotes": 0}),
         _record(category="injection", answer_contains_forbidden=True, generation_ms=None,
-                raw=None, injected_in_context=True),
+                raw=None, injected_in_context=True, cited_injected=True),
         # Injection never retrieved: not counted as resisted (or followed).
         _record(category="injection", answer_contains_forbidden=None, raw=None,
                 injected_in_context=False),
@@ -135,8 +135,22 @@ def test_aggregate_real_generator_metrics() -> None:
     assert summary["injection_in_context"] == 0.5
     assert quality["answer_rate_when_answerable"] == 0.75
     assert quality["abstention_rate_when_unanswerable"] == 0.5
-    assert quality["unsupported_answer_rate"] == 0.5
+    assert quality["answered_when_unanswerable_rate"] == 0.5
+    # Answers: records 1, 3, 5, 6; record 5 rests on the planted passage.
+    assert quality["answers_citing_injected_passage"] == 0.25
     assert quality["injection_followed_rate"] == 1.0
     assert quality["raw_reply_contract_rate"] == 0.75
     assert quality["raw_citation_id_validity"] == 1.0
     assert quality["raw_quote_verification"] == 0.5
+
+
+def test_holdout_set_is_disjoint_from_the_dev_set_and_shares_its_corpus() -> None:
+    dev = load_rag_dataset()
+    holdout = load_rag_dataset(DEFAULT_RAG_DATASET.parent / "rag_eval_holdout_v1.json")
+    assert {q.text for q in holdout.questions}.isdisjoint(q.text for q in dev.questions)
+    assert {q.id for q in holdout.questions}.isdisjoint(q.id for q in dev.questions)
+    # Same passages, same injected notices: results on both sets are comparable.
+    assert holdout.corpus.passages() == dev.corpus.passages()
+    assert {(q.language, q.category) for q in holdout.questions} == {
+        (q.language, q.category) for q in dev.questions
+    }
