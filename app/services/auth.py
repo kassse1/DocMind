@@ -5,7 +5,7 @@ client. Logs carry user ids and outcomes, never emails, passwords, hashes or tok
 """
 
 import logging
-import uuid
+from dataclasses import dataclass
 
 from fastapi import status
 from sqlalchemy import select
@@ -22,7 +22,8 @@ from app.core.security import (
     needs_rehash,
     verify_password,
 )
-from app.models import User
+from app.models import AuthSession, User
+from app.services import sessions
 
 logger = logging.getLogger(__name__)
 
@@ -90,16 +91,27 @@ def authenticate(session: Session, email: str, password: str) -> User:
     return user
 
 
-def user_from_token(session: Session, token: str, settings: TokenSettings) -> User:
+@dataclass(frozen=True)
+class Authenticated:
+    user: User
+    session: AuthSession
+
+
+def from_access_token(session: Session, token: str, settings: TokenSettings) -> Authenticated:
     try:
-        user_id: uuid.UUID = decode_access_token(token, settings)
+        claims = decode_access_token(token, settings)
     except InvalidTokenError as exc:
         # Reason class only (e.g. ExpiredSignatureError), never the token.
         logger.info("Rejected access token: %s", exc)
         raise invalid_token() from None
-    user = session.get(User, user_id)
+    user = session.get(User, claims.user_id)
     if user is None or not user.is_active or user.password_hash is None:
         # Deleted or deactivated after the token was issued.
         logger.info("Rejected access token: no active user")
         raise invalid_token()
-    return user
+    # The session check makes logout and revocation immediate for access tokens too.
+    auth_session = sessions.active_session(session, claims.session_id, user.id)
+    if auth_session is None:
+        logger.info("Rejected access token: session ended")
+        raise invalid_token()
+    return Authenticated(user, auth_session)

@@ -21,7 +21,7 @@ from app.main import create_app
 
 SECRET = "unit-test-secret-0123456789abcdef-xyz"
 TOKENS = TokenSettings(SECRET, "docmind", "docmind-api", timedelta(minutes=15))
-USER = uuid.uuid4()
+USER, SID = uuid.uuid4(), uuid.uuid4()
 
 
 # --- passwords ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ def test_corrupt_hash_never_verifies(bad_hash: str) -> None:
 def _claims(**overrides):
     now = datetime.now(UTC)
     claims = {
-        "sub": str(USER), "iat": now, "exp": now + timedelta(minutes=5),
+        "sub": str(USER), "sid": str(SID), "iat": now, "exp": now + timedelta(minutes=5),
         "iss": "docmind", "aud": "docmind-api", "typ": "access",
     }
     claims.update(overrides)
@@ -66,15 +66,16 @@ def _encode(claims, key=SECRET, algorithm="HS256") -> str:
 
 
 def test_valid_token_round_trip() -> None:
-    token = create_access_token(USER, TOKENS)
-    assert decode_access_token(token, TOKENS) == USER
+    token = create_access_token(USER, SID, TOKENS)
+    claims = decode_access_token(token, TOKENS)
+    assert (claims.user_id, claims.session_id) == (USER, SID)
     claims = jwt.decode(token, SECRET, algorithms=["HS256"], audience="docmind-api")
     assert claims["exp"] - claims["iat"] == 15 * 60
     assert claims["typ"] == "access" and claims["iss"] == "docmind"
 
 
 def _tampered() -> str:
-    head, body, signature = create_access_token(USER, TOKENS).split(".")
+    head, body, signature = create_access_token(USER, SID, TOKENS).split(".")
     return ".".join([head, body, ("A" if signature[0] != "A" else "B") + signature[1:]])
 
 
@@ -95,6 +96,8 @@ def _tampered() -> str:
         pytest.param(lambda: _encode(_claims(sub="not-a-uuid")), id="invalid-subject"),
         pytest.param(lambda: _encode(_claims(exp=None)), id="missing-exp"),
         pytest.param(lambda: _encode(_claims(sub=None)), id="missing-sub"),
+        pytest.param(lambda: _encode(_claims(sid=None)), id="missing-session"),
+        pytest.param(lambda: _encode(_claims(sid="nope")), id="invalid-session"),
         pytest.param(lambda: _encode(_claims(typ=None)), id="missing-type"),
         pytest.param(lambda: _encode(_claims(aud=None)), id="missing-audience"),
         pytest.param(lambda: "not.a.jwt", id="garbage"),
@@ -127,6 +130,8 @@ PUBLIC = {
     ("GET", "/api/v1/health/ready"),
     ("POST", "/api/v1/auth/register"),
     ("POST", "/api/v1/auth/login"),
+    # Authenticated by the refresh token in the body, not by a Bearer access token.
+    ("POST", "/api/v1/auth/refresh"),
 }
 
 

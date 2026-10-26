@@ -114,6 +114,8 @@ def test_all_models_registered_on_metadata() -> None:
         "conversations",
         "messages",
         "jobs",
+        "auth_sessions",
+        "refresh_tokens",
     }
 
 

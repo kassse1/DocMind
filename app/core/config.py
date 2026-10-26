@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     jwt_issuer: str = "docmind"
     jwt_audience: str = "docmind-api"
     access_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
+    # Refresh tokens rotate on every use; each one expires after refresh_token_ttl_days of
+    # disuse, and the session (login) ends after session_max_age_days whatever happens.
+    refresh_token_ttl_days: int = Field(default=7, ge=1, le=90)
+    session_max_age_days: int = Field(default=30, ge=1, le=365)
 
     # Embeddings. "fake" gives deterministic, meaningless vectors (tests/CI only).
     embedding_backend: Literal["sentence-transformers", "fake"] = "sentence-transformers"

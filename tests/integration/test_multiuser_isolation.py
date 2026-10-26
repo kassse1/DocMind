@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
@@ -240,9 +241,12 @@ PROTECTED = [
 @pytest.mark.parametrize(("method", "path", "body"), PROTECTED)
 def test_protected_endpoints_reject_missing_and_expired_tokens(world, method, path, body):
     path = path.format(doc=world.alice_doc)
-    alice_id = uuid.UUID(world.alice.get("/api/v1/auth/me").json()["id"])
+    claims = jwt.decode(
+        world.alice.headers["Authorization"].split()[1], options={"verify_signature": False}
+    )
     expired = create_access_token(
-        alice_id, world.app.state.token_settings, now=datetime.now(UTC) - timedelta(hours=1)
+        uuid.UUID(claims["sub"]), uuid.UUID(claims["sid"]), world.app.state.token_settings,
+        now=datetime.now(UTC) - timedelta(hours=1),
     )
     for headers, code in (({}, "authentication_required"),
                           ({"Authorization": f"Bearer {expired}"}, "invalid_token")):

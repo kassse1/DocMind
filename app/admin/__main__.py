@@ -5,9 +5,10 @@
     python -m app.admin activate --email someone@example.com
 
 set-password is how a legacy, password-less account (created before Phase 8) is claimed by
-whoever controls the server; it never creates an account. The password is read with a
-hidden prompt (twice), or from DOCMIND_ADMIN_NEW_PASSWORD for automation; it is never
-printed or logged. Deactivation makes the account's existing tokens stop working at once.
+whoever controls the server; it never creates an account. set-password and deactivate also
+revoke every session of the account, so its refresh and access tokens stop working at once.
+The password is read with a hidden prompt (twice), or from DOCMIND_ADMIN_NEW_PASSWORD for
+automation; it is never printed or logged.
 """
 
 import argparse
@@ -24,6 +25,7 @@ from app.core.database import create_db_engine
 from app.core.security import hash_password
 from app.models import User
 from app.schemas.auth import RegisterRequest, normalize_email
+from app.services import sessions
 
 PASSWORD_ENV = "DOCMIND_ADMIN_NEW_PASSWORD"
 
@@ -68,8 +70,12 @@ def main(argv: list[str] | None = None) -> int:
                         "Password does not meet the policy (12-1024 characters)"
                     ) from None
                 user.password_hash = hash_password(password)
+                # A new password ends every existing login.
+                sessions.revoke_all(session, user.id, "password_changed")
             else:
                 user.is_active = args.command == "activate"
+                if not user.is_active:
+                    sessions.revoke_all(session, user.id, "deactivated")
             session.commit()
             print(f"{args.command}: done for user {user.id}")
     finally:

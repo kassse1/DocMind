@@ -69,3 +69,31 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int = Field(description="Seconds until the access token expires")
+    refresh_token: str = Field(
+        description="Opaque, single use: POST /auth/refresh returns a new one each time"
+    )
+    refresh_expires_in: int = Field(description="Seconds until the refresh token expires")
+
+
+class RefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: Annotated[str, StringConstraints(min_length=1, max_length=256)]
+
+
+class LogoutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    all_sessions: bool = Field(
+        default=False, description="Also end every other session of this account"
+    )
+
+
+class SessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_at: datetime
+    last_used_at: datetime | None
+    expires_at: datetime
+    current: bool = False

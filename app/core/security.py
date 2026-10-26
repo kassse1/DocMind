@@ -13,6 +13,8 @@ Never log a password, a hash, a token or an Authorization header: none of these 
 does, and their exceptions carry no secret material.
 """
 
+import hashlib
+import secrets
 import unicodedata
 import uuid
 from dataclasses import dataclass
@@ -27,7 +29,8 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_TYPE = "access"
 # 256-bit minimum for an HS256 key (RFC 7518 section 3.2).
 MIN_SECRET_BYTES = 32
-_REQUIRED_CLAIMS = ("sub", "iat", "exp", "iss", "aud", "typ")
+# sid = the login session (app/models/session.py); checked on every request.
+_REQUIRED_CLAIMS = ("sub", "sid", "iat", "exp", "iss", "aud", "typ")
 
 _hasher = PasswordHasher.from_parameters(RFC_9106_LOW_MEMORY)
 
@@ -73,12 +76,22 @@ class InvalidTokenError(Exception):
     """Any problem with a presented token. The message never contains the token."""
 
 
+@dataclass(frozen=True)
+class AccessClaims:
+    user_id: uuid.UUID
+    session_id: uuid.UUID
+
+
 def create_access_token(
-    user_id: uuid.UUID, settings: TokenSettings, now: datetime | None = None
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    settings: TokenSettings,
+    now: datetime | None = None,
 ) -> str:
     issued = (now or datetime.now(UTC)).replace(microsecond=0)
     claims = {
         "sub": str(user_id),
+        "sid": str(session_id),
         "iat": issued,
         "exp": issued + settings.ttl,
         "iss": settings.issuer,
@@ -90,8 +103,8 @@ def create_access_token(
     return jwt.encode(claims, settings.secret, algorithm=JWT_ALGORITHM)
 
 
-def decode_access_token(token: str, settings: TokenSettings) -> uuid.UUID:
-    """Validate signature, algorithm, exp/iat, issuer, audience and type; return the user id."""
+def decode_access_token(token: str, settings: TokenSettings) -> AccessClaims:
+    """Validate signature, algorithm, exp/iat, issuer, audience and type; return the ids."""
     try:
         claims = jwt.decode(
             token,
@@ -108,6 +121,16 @@ def decode_access_token(token: str, settings: TokenSettings) -> uuid.UUID:
     if claims.get("typ") != ACCESS_TOKEN_TYPE:
         raise InvalidTokenError("wrong token type")
     try:
-        return uuid.UUID(str(claims["sub"]))
+        return AccessClaims(uuid.UUID(str(claims["sub"])), uuid.UUID(str(claims["sid"])))
     except ValueError:
-        raise InvalidTokenError("invalid subject") from None
+        raise InvalidTokenError("invalid subject or session") from None
+
+
+def new_refresh_token() -> str:
+    """Opaque, 256 bits from the OS CSPRNG. Never a JWT: it means nothing without the
+    server-side row, and only its hash is stored."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

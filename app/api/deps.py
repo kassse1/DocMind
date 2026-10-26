@@ -49,17 +49,22 @@ def get_token_settings(request: Request) -> TokenSettings:
     return request.app.state.token_settings
 
 
-def get_current_user(
+def get_current_auth(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     session: Annotated[Session, Depends(get_db_session)],
     token_settings: Annotated[TokenSettings, Depends(get_token_settings)],
-) -> User:
-    """The authenticated user, from a validated Bearer access token only.
-
-    The single source of identity for every protected route: services receive this User
-    and scope every query to user.id. Nothing in the path, query, body or other headers
-    can name or override the user.
-    """
+) -> auth_service.Authenticated:
+    """User and login session from a validated Bearer access token, the session still
+    active (not logged out, not revoked, not past its absolute expiry)."""
     if credentials is None or not credentials.credentials:
         raise auth_service.missing_credentials()
-    return auth_service.user_from_token(session, credentials.credentials, token_settings)
+    return auth_service.from_access_token(session, credentials.credentials, token_settings)
+
+
+def get_current_user(
+    auth: Annotated[auth_service.Authenticated, Depends(get_current_auth)],
+) -> User:
+    """The authenticated user: the single source of identity for every protected route.
+    Services receive this User and scope every query to user.id. Nothing in the path,
+    query, body or other headers can name or override the user."""
+    return auth.user

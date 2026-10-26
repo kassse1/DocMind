@@ -258,14 +258,16 @@ def test_missing_and_non_bearer_credentials_are_401_with_a_challenge(client) -> 
 
 def test_invalid_tokens_are_401_invalid_token(client, settings) -> None:
     user_id = uuid.UUID(register(client).json()["id"])
+    good = login(client).json()["access_token"]
+    sid = uuid.UUID(jwt.decode(good, options={"verify_signature": False})["sid"])
     app = client.app
-    good = create_access_token(user_id, app.state.token_settings)
     past = datetime.now(UTC) - timedelta(hours=1)
     for token in (
-        create_access_token(user_id, app.state.token_settings, now=past),  # expired
+        create_access_token(user_id, sid, app.state.token_settings, now=past),  # expired
         good[:-2] + ("AA" if good[-2:] != "AA" else "BB"),  # tampered
-        jwt.encode({"sub": str(user_id), "typ": "access"}, None, algorithm="none"),
-        create_access_token(uuid.uuid4(), app.state.token_settings),  # unknown user
+        jwt.encode({"sub": str(user_id), "sid": str(sid), "typ": "access"}, None, "none"),
+        create_access_token(uuid.uuid4(), sid, app.state.token_settings),  # unknown user
+        create_access_token(user_id, uuid.uuid4(), app.state.token_settings),  # no session
     ):
         response = me(client, token)
         assert response.status_code == 401

@@ -25,8 +25,12 @@ def client(settings: Settings) -> Iterator[TestClient]:
 TEST_JWT_SECRET = "test-only-jwt-secret-0123456789abcdef"
 
 
-def bearer(app, user_id) -> dict[str, str]:
-    """Authorization header with a real token signed by this app's own key."""
+def bearer(app, user_id, session_id=None) -> dict[str, str]:
+    """Authorization header with a real token signed by this app's own key. Without a
+    session_id the token names a random session: valid signature, no session row."""
+    import uuid
+
     from app.core.security import create_access_token
 
-    return {"Authorization": f"Bearer {create_access_token(user_id, app.state.token_settings)}"}
+    token = create_access_token(user_id, session_id or uuid.uuid4(), app.state.token_settings)
+    return {"Authorization": f"Bearer {token}"}

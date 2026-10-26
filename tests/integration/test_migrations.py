@@ -12,7 +12,10 @@ from tests.integration.conftest import run_alembic
 
 pytestmark = pytest.mark.integration
 
-APP_TABLES = {"users", "documents", "document_chunks", "conversations", "messages", "jobs"}
+APP_TABLES = {
+    "users", "documents", "document_chunks", "conversations", "messages", "jobs",
+    "auth_sessions", "refresh_tokens",
+}
 INITIAL_REVISION = "fead9350b593"
 
 

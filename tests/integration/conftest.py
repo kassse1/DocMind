@@ -84,8 +84,11 @@ _password_hash: str | None = None
 
 def authenticate(client, email: str):
     """Give a TestClient a real access token for `email` (created if needed, with a real
-    Argon2id hash), signed with the app's own key. Returns the client."""
+    Argon2id hash) and a real login session, signed with the app's own key."""
+    from datetime import UTC, datetime, timedelta
+
     from app.core.security import create_access_token, hash_password
+    from app.models import AuthSession
     from app.services.users import get_or_create_user
 
     global _password_hash
@@ -97,7 +100,12 @@ def authenticate(client, email: str):
         if user.password_hash is None:
             user.password_hash = _password_hash
             session.commit()
-        user_id = user.id
-    token = create_access_token(user_id, app.state.token_settings)
+        auth_session = AuthSession(
+            user_id=user.id, expires_at=datetime.now(UTC) + timedelta(days=1)
+        )
+        session.add(auth_session)
+        session.commit()
+        user_id, session_id = user.id, auth_session.id
+    token = create_access_token(user_id, session_id, app.state.token_settings)
     client.headers["Authorization"] = f"Bearer {token}"
     return client
