@@ -24,3 +24,12 @@ def test_invalid_environment_is_rejected(monkeypatch: pytest.MonkeyPatch) -> Non
 
     with pytest.raises(ValueError):
         Settings(_env_file=None)
+
+
+def test_generation_defaults_are_safe_and_offline() -> None:
+    settings = Settings(_env_file=None)
+    # No model is called unless an operator configures one.
+    assert settings.generation_backend == "disabled"
+    assert settings.generation_base_url.startswith("http://127.0.0.1:")
+    assert settings.generation_context_window == 4096
+    assert settings.rag_prompt_version == "grounded-qa-v2"

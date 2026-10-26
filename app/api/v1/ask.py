@@ -11,7 +11,6 @@ from app.embeddings.base import Embedder
 from app.models import User
 from app.rag.generation import Generator
 from app.rag.grounding import GROUNDING_POLICY, Abstention, GroundedAnswer
-from app.rag.prompt import PROMPT_VERSION
 from app.rag.tokens import TokenCounter
 from app.schemas.ask import (
     AskRequest,
@@ -103,7 +102,7 @@ def ask(
     common = {
         "retrieval": _retrieval_info(outcome, body, embedder, counter),
         "generation_model": outcome.generation_model,
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": settings.rag_prompt_version,
         "timing_ms": Timing(
             retrieval_ms=round(outcome.retrieval_ms, 1),
             generation_ms=None

@@ -155,7 +155,7 @@ def test_grounded_answer_with_citation_metadata(app, api, searches, session) -> 
     assert retrieval["context_chunks"] == 2
     assert retrieval["token_counter"] == "utf8-bytes-upper-bound"
     assert body["generation_model"] == "fake/extractive"
-    assert body["prompt_version"] == "grounded-qa-v1"
+    assert body["prompt_version"] == "grounded-qa-v2"
     assert body["timing_ms"]["generation_ms"] is not None
     # Semantic retrieval by default, with the question and top_k passed through.
     [request] = searches

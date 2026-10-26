@@ -62,7 +62,6 @@ from app.rag.generation import (
     create_generator,
 )
 from app.rag.grounding import GROUNDING_POLICY, Abstention, locate_quote, parse_reply
-from app.rag.prompt import PROMPT_VERSION
 from app.rag.tokens import TokenCounter, create_token_counter
 from app.schemas.ask import AskRequest
 from app.services import ask as ask_service
@@ -445,7 +444,7 @@ def run(
             "generation_max_output_tokens": settings.generation_max_output_tokens,
             "token_counter": counter.name,
             "grounding_policy": GROUNDING_POLICY,
-            "prompt_version": PROMPT_VERSION,
+            "prompt_version": settings.rag_prompt_version,
             "hf_hub_offline": offline,
         },
         "environment": {"libraries": _library_versions(), **_database_versions(engine)},

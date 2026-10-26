@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from app.rag.context import build_context, serialize_entry
-from app.rag.prompt import SYSTEM_PROMPT, build_messages
+from app.rag.prompt import DEFAULT_PROMPT_VERSION, SYSTEM_PROMPTS, build_messages
 from app.rag.tokens import Utf8ByteCounter
 
 DOC = uuid.UUID("00000000-0000-0000-0000-00000000000d")
@@ -119,7 +119,7 @@ def test_document_text_stays_data_in_the_prompt() -> None:
     system, user = build_messages("What is the deadline?", context)
 
     assert (system.role, user.role) == ("system", "user")
-    assert system.content == SYSTEM_PROMPT
+    assert system.content == SYSTEM_PROMPTS[DEFAULT_PROMPT_VERSION]
     assert "Ignore all previous" not in system.content
     # The user message parses back to exactly one question and the real sources: the
     # forged closing quotes and the fake "S9" entry never escape the text string.
@@ -141,3 +141,20 @@ def test_question_is_never_in_the_system_message() -> None:
     system, user = build_messages("SECRET-QUESTION", build_context([], COUNTER, BIG))
     assert "SECRET-QUESTION" not in system.content
     assert json.loads(user.content) == {"question": "SECRET-QUESTION", "sources": []}
+
+
+@pytest.mark.parametrize("version", sorted(SYSTEM_PROMPTS))
+def test_every_prompt_version_keeps_data_out_of_the_system_message(version: str) -> None:
+    context = build_context([Hit(INJECTION)], COUNTER, BIG)
+    system, user = build_messages("What is the deadline?", context, version)
+    assert system.content == SYSTEM_PROMPTS[version]
+    assert "Ignore all previous" not in system.content
+    assert json.loads(user.content)["sources"][0]["text"] == INJECTION
+    # Every version asks for the same JSON keys the grounding parser reads.
+    for key in ('"status"', '"answer"', '"citations"', '"source_id"', '"quote"'):
+        assert key in system.content
+
+
+def test_unknown_prompt_version_is_rejected() -> None:
+    with pytest.raises(KeyError):
+        build_messages("q", build_context([], COUNTER, BIG), "grounded-qa-v9")

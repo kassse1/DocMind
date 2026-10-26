@@ -90,7 +90,8 @@ def _retrieve(
 
 def passage_budget(settings: Settings, counter: TokenCounter, question: str) -> int:
     """Tokens available for passages; <= 0 when even an empty context does not fit."""
-    fixed = sum(counter.count(m.content) for m in build_messages(question, _NO_SOURCES))
+    messages = build_messages(question, _NO_SOURCES, settings.rag_prompt_version)
+    fixed = sum(counter.count(m.content) for m in messages)
     left = (
         settings.generation_context_window
         - settings.generation_max_output_tokens
@@ -153,7 +154,7 @@ def ask(
         if not context.sources:
             result = Abstention(AbstentionReason.NO_ELIGIBLE_CONTEXT)
         else:
-            messages = build_messages(request.question, context)
+            messages = build_messages(request.question, context, settings.rag_prompt_version)
             generation_started = time.monotonic()
             try:
                 generation = generator.generate(messages)
