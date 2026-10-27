@@ -69,14 +69,41 @@ function issue(tokens: TokenResponse): NextResponse {
   return response;
 }
 
-async function readJson(request: Request): Promise<unknown> {
-  const text = await request.text();
-  if (text.length > MAX_AUTH_BODY_BYTES) return undefined;
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return undefined;
+type JsonBody = { kind: "json"; value: unknown } | { kind: "invalid" } | { kind: "too_large" };
+
+/**
+ * Read a small JSON body without ever buffering more than MAX_AUTH_BODY_BYTES: a declared
+ * length above the cap is refused at once, and a streamed (chunked) body is cut off as soon
+ * as it crosses the cap. Reading the whole body first would let one request fill the web
+ * container's memory.
+ */
+export async function readJson(request: Request): Promise<JsonBody> {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (!Number.isFinite(declared) || declared > MAX_AUTH_BODY_BYTES) return { kind: "too_large" };
+  if (!request.body) return { kind: "json", value: {} };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_AUTH_BODY_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      return { kind: "too_large" };
+    }
+    chunks.push(value);
   }
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+    return { kind: "json", value: text ? JSON.parse(text) : {} };
+  } catch {
+    return { kind: "invalid" };
+  }
+}
+
+function tooLarge(): Response {
+  return bffError(413, "payload_too_large", "Request body is too large.");
 }
 
 function forbidden(): Response {
@@ -86,11 +113,12 @@ function forbidden(): Response {
 export async function login(request: NextRequest): Promise<Response> {
   if (!sameOriginJson(request)) return forbidden();
   const body = await readJson(request);
-  if (typeof body !== "object" || body === null) {
+  if (body.kind === "too_large") return tooLarge();
+  if (body.kind === "invalid" || typeof body.value !== "object" || body.value === null) {
     return bffError(400, "bad_request", "Invalid request body.");
   }
   // Only the two fields the backend accepts; it validates them (extra fields are 422).
-  const { email, password } = body as { email?: unknown; password?: unknown };
+  const { email, password } = body.value as { email?: unknown; password?: unknown };
   const upstream = await callBackend(request, "/auth/login", { body: { email, password } });
   if (!upstream.ok) return unavailable();
   if (!upstream.response.ok) return relayError(upstream.response);
@@ -119,8 +147,10 @@ export async function refresh(request: NextRequest): Promise<Response> {
 export async function logout(request: NextRequest): Promise<Response> {
   if (!sameOriginJson(request)) return forbidden();
   const body = await readJson(request);
+  if (body.kind === "too_large") return tooLarge();
+  const value = body.kind === "json" ? body.value : null;
   const allSessions =
-    typeof body === "object" && body !== null && (body as { all_sessions?: unknown }).all_sessions === true;
+    typeof value === "object" && value !== null && (value as { all_sessions?: unknown }).all_sessions === true;
   const payload = { all_sessions: allSessions };
 
   let authorization = request.headers.get("authorization") ?? undefined;

@@ -143,6 +143,69 @@ describe("BFF auth handlers", () => {
   });
 });
 
+describe("BFF auth body limit (Phase 12 finding)", () => {
+  function streamingRequest(path: string) {
+    // An endless chunked body: counts what the handler actually pulls.
+    const pulled = { bytes: 0, cancelled: false };
+    const chunk = new Uint8Array(1024).fill(97);
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled.bytes += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        pulled.cancelled = true;
+      },
+    });
+    const request = new NextRequest(`${ORIGIN}${path}`, {
+      method: "POST",
+      headers: { origin: ORIGIN, host: "localhost:3000", "content-type": "application/json" },
+      body,
+      duplex: "half",
+    } as ConstructorParameters<typeof NextRequest>[1]);
+    return { request, pulled };
+  }
+
+  it("refuses a declared oversized body before reading it or calling the backend", async () => {
+    const { calls } = mockFetch(() => jsonResponse(TOKENS));
+    const request = bffRequest("/bff/auth/login", { headers: { "content-length": "104857600" } });
+    const response = await login(request);
+    expect(response.status).toBe(413);
+    expect((await response.json()).error.code).toBe("payload_too_large");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("stops reading a streamed body as soon as it crosses the limit", async () => {
+    const { calls } = mockFetch(() => jsonResponse(TOKENS));
+    const { request, pulled } = streamingRequest("/bff/auth/login");
+    const response = await login(request);
+    expect(response.status).toBe(413);
+    expect(pulled.bytes).toBeLessThanOrEqual(8 * 1024);
+    expect(pulled.cancelled).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("applies the same limit to logout", async () => {
+    const { calls } = mockFetch(() => new Response(null, { status: 204 }));
+    const { request, pulled } = streamingRequest("/bff/auth/logout");
+    const response = await logout(request);
+    expect(response.status).toBe(413);
+    expect(pulled.bytes).toBeLessThanOrEqual(8 * 1024);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("still accepts a normal body and rejects invalid JSON with 400", async () => {
+    mockFetch(() => jsonResponse(TOKENS));
+    expect((await login(bffRequest("/bff/auth/login", { body: { email: "a@example.test", password: "p" } }))).status).toBe(200);
+    const broken = new NextRequest(`${ORIGIN}/bff/auth/login`, {
+      method: "POST",
+      headers: { origin: ORIGIN, host: "localhost:3000", "content-type": "application/json" },
+      body: "{not json",
+    });
+    expect((await login(broken)).status).toBe(400);
+  });
+});
+
 describe("BFF data proxy", () => {
   it("allows only the documented routes and never the token endpoints", () => {
     expect(isAllowed("GET", "documents")).toBe(true);
