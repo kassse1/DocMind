@@ -7,11 +7,19 @@ Runs `docker compose -p docmind-smoke -f deploy/compose.yaml -f deploy/compose.s
 build, migrations, liveness/readiness, registration and login of two users, uploads,
 indexing, semantic and hybrid search, /ask with the fake generator, refresh rotation,
 logout and replay rejection, cross-user isolation, rate limiting, restart persistence,
-recovery of a job interrupted by a killed worker, and leak-free logs.
+recovery of a job interrupted by a killed worker, the web app and its BFF (pages, CSP,
+cookie session, calls to the API over the internal network), and leak-free logs.
+
+Throwaway release check (no Docker volumes at all, see deploy/compose.release-check.yaml):
+
+    python scripts/smoke_test.py --project docmind-relcheck --override compose.release-check.yaml `
+        --port 8281 --web-port 3281 --storage-dir <empty dir> --env-file <path> --down
 
 Secrets: if the env file does not exist it is created with random POSTGRES_PASSWORD and
-DOCMIND_JWT_SECRET_KEY; they are never printed. The stack is stopped at the end WITHOUT
-deleting volumes; remove them yourself once you have checked their names:
+DOCMIND_JWT_SECRET_KEY; they are never printed. By default the stack is stopped at the end
+WITHOUT deleting volumes; --down removes the containers and network instead (never volumes,
+and refused for the developer, deployment and smoke projects). Remove smoke volumes
+yourself once you have checked their names:
     docker compose -p docmind-smoke -f deploy/compose.yaml -f deploy/compose.smoke.yaml \
         --env-file <same env file> down -v
 """
@@ -19,6 +27,7 @@ deleting volumes; remove them yourself once you have checked their names:
 import argparse
 import contextlib
 import json
+import re
 import secrets
 import subprocess
 import sys
@@ -30,6 +39,8 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = "docmind-smoke"
+# Projects whose containers this script must never remove (--down).
+PROTECTED_PROJECTS = frozenset({"docmind", "docmind-stack", "docmind-smoke"})
 PASSWORD = {"alice": secrets.token_urlsafe(18), "bob": secrets.token_urlsafe(18)}
 # Fresh accounts per run, so the test can be repeated on the same volumes.
 EMAIL = {user: f"{user}-{secrets.token_hex(4)}@example.com" for user in PASSWORD}
@@ -42,11 +53,12 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 
 class Stack:
-    def __init__(self, env_file: Path) -> None:
+    def __init__(self, env_file: Path, project: str = PROJECT,
+                 override: str = "compose.smoke.yaml") -> None:
         self.base = [
-            "docker", "compose", "-p", PROJECT,
+            "docker", "compose", "-p", project,
             "-f", str(ROOT / "deploy" / "compose.yaml"),
-            "-f", str(ROOT / "deploy" / "compose.smoke.yaml"),
+            "-f", str(ROOT / "deploy" / override),
             "--env-file", str(env_file),
         ]
 
@@ -60,10 +72,12 @@ class Stack:
         return self.run("logs", "--no-color", capture=True, check_rc=False).stdout
 
 
-def write_env(path: Path, port: int) -> None:
+def write_env(path: Path, port: int, web_port: int = 3181,
+              storage_dir: Path | None = None) -> None:
     if path.exists():
         return
     hub = Path.home() / ".cache" / "huggingface" / "hub"
+    extra = [f"CHECK_STORAGE_DIR={storage_dir}"] if storage_dir else []
     path.write_text(
         "\n".join([
             "POSTGRES_USER=docmind",
@@ -73,9 +87,11 @@ def write_env(path: Path, port: int) -> None:
             "DOCMIND_ENVIRONMENT=test",
             "DOCMIND_ALLOWED_HOSTS=localhost,127.0.0.1",
             f"DOCMIND_API_PORT={port}",
+            f"DOCMIND_WEB_PORT={web_port}",
             "DOCMIND_GENERATION_BACKEND=fake",
             "DOCMIND_JOB_LEASE_TIMEOUT_S=30",
             f"HOST_HF_HUB={hub}",
+            *extra,
         ]) + "\n",
         encoding="utf-8",
     )
@@ -104,17 +120,99 @@ def wait_status(client: httpx.Client, headers, doc_id: str, wanted: set[str], ti
     return status
 
 
+def wait_web(client: httpx.Client, timeout_s: float = 120) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            if client.get("/login").status_code == 200:
+                return True
+        except httpx.HTTPError:
+            pass
+        time.sleep(2)
+    return False
+
+
+def refresh_cookie(response: httpx.Response) -> tuple[str | None, str]:
+    header = response.headers.get("set-cookie", "")
+    match = re.search(r"docmind_refresh=([^;]*)", header)
+    return (match.group(1) if match else None), header.lower()
+
+
+def web_checks(web: httpx.Client, origin: str) -> list[str]:
+    """The containerized Next.js app: pages, CSP, BFF session and the internal API URL.
+    Returns the secrets it used, for the log leak scan."""
+    page = web.get("/login")
+    csp = page.headers.get("content-security-policy", "")
+    nonce = re.search(r"'nonce-([^']+)'", csp)
+    scripts = re.findall(r"<script\b[^>]*>", page.text)
+    check("web: sign-in page with a nonce CSP on every script",
+          page.status_code == 200 and nonce is not None and "unsafe-inline" not in csp
+          and bool(scripts) and all(f'nonce="{nonce.group(1)}"' in s for s in scripts),
+          f"{len(scripts)} scripts")
+
+    email = f"web-{secrets.token_hex(4)}@example.com"
+    password = secrets.token_urlsafe(18)
+    creds = {"email": email, "password": password}
+    same_origin = {"Origin": origin}
+    reg = web.post("/bff/api/auth/register", json=creds)
+    login = web.post("/bff/auth/login", json=creds, headers=same_origin)
+    cookie, flags = refresh_cookie(login)
+    body = login.json() if login.status_code == 200 else {}
+    check("web: register and sign in through the BFF (API reached as http://api:8000)",
+          reg.status_code == 201 and login.status_code == 200
+          and set(body) == {"access_token", "expires_in"})
+    check("web: refresh token only in an HttpOnly, SameSite=Strict, Secure cookie",
+          bool(cookie) and "httponly" in flags and "samesite=strict" in flags
+          and "secure" in flags)
+    bearer = {"Authorization": f"Bearer {body.get('access_token', '')}"}
+    me = web.get("/bff/api/auth/me", headers=bearer)
+    check("web: API call through the BFF proxy",
+          me.status_code == 200 and me.json().get("email") == email)
+    cross = web.post("/bff/auth/login", json=creds, headers={"Origin": "https://evil.example"})
+    check("web: cross-site sign-in refused", cross.status_code == 403)
+    blocked = web.post("/bff/api/auth/refresh", json={"refresh_token": "x"})
+    check("web: token endpoints not reachable through the data proxy", blocked.status_code == 404)
+
+    rotated = web.post("/bff/auth/refresh", json={},
+                       headers={**same_origin, "Cookie": f"docmind_refresh={cookie}"})
+    new_cookie, _ = refresh_cookie(rotated)
+    check("web: refresh rotates the cookie",
+          rotated.status_code == 200 and bool(new_cookie) and new_cookie != cookie)
+    token = rotated.json().get("access_token", "") if rotated.status_code == 200 else ""
+    out = web.post("/bff/auth/logout", json={}, headers={
+        **same_origin, "Authorization": f"Bearer {token}",
+        "Cookie": f"docmind_refresh={new_cookie}"})
+    after = web.get("/bff/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    check("web: sign-out revokes the session",
+          out.status_code == 204 and after.status_code == 401)
+    return [password, body.get("access_token", ""), cookie or "", new_cookie or "", email]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8181)
+    parser.add_argument("--web-port", type=int, default=3181)
+    parser.add_argument("--project", default=PROJECT)
+    parser.add_argument("--override", default="compose.smoke.yaml",
+                        help="override file in deploy/ (compose.release-check.yaml: no volumes)")
+    parser.add_argument("--storage-dir", type=Path,
+                        help="host directory for uploads (CHECK_STORAGE_DIR, release check)")
+    parser.add_argument("--down", action="store_true",
+                        help="remove containers and network at the end (never volumes)")
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
     if ROOT in args.env_file.resolve().parents:
         parser.error("keep the smoke env file (it holds secrets) outside the repository")
-    write_env(args.env_file, args.port)
-    stack = Stack(args.env_file)
+    if args.down and args.project in PROTECTED_PROJECTS:
+        parser.error(f"--down is refused for the {args.project!r} project")
+    if args.storage_dir:
+        args.storage_dir.mkdir(parents=True, exist_ok=True)
+    write_env(args.env_file, args.port, args.web_port, args.storage_dir)
+    stack = Stack(args.env_file, args.project, args.override)
     api = httpx.Client(base_url=f"http://127.0.0.1:{args.port}", timeout=120)
+    web_origin = f"http://127.0.0.1:{args.web_port}"
+    web = httpx.Client(base_url=web_origin, timeout=120)
 
     # 1-5: build, postgres, migrations, api and worker, liveness and readiness.
     if not args.skip_build:
@@ -127,6 +225,10 @@ def main() -> int:
     ready = api.get("/api/v1/health/ready").json()
     check("readiness checks database and schema", ready.get("checks") ==
           {"database": "ok", "schema": "ok"}, json.dumps(ready.get("checks")))
+
+    # The web container: started after the API is healthy; talks to it over the app network.
+    check("web app ready", wait_web(web))
+    web_secrets = web_checks(web, web_origin)
 
     # 6-7: register and log in.
     tokens, headers = {}, {}
@@ -234,10 +336,12 @@ def main() -> int:
         ("access token", tokens["bob"]["access_token"]),
         ("refresh token", tokens["bob"]["refresh_token"]), ("email", "@example.com"),
         ("authorization header", "Bearer "), ("document text", "450 000 tenge"),
+        *((f"web secret {i}", value) for i, value in enumerate(web_secrets) if value),
     ) if value in logs]
     check("logs contain no passwords, tokens, emails or document text", not leaks, str(leaks))
+    project = args.project
     json_lines = [line.split("|", 1)[-1].strip() for line in logs.splitlines()
-                  if line.startswith(("api", "worker", f"{PROJECT}-api", f"{PROJECT}-worker"))]
+                  if line.startswith(("api", "worker", f"{project}-api", f"{project}-worker"))]
     parsed = 0
     for line in json_lines:
         with contextlib.suppress(ValueError):
@@ -245,8 +349,9 @@ def main() -> int:
     check("api and worker logs are JSON", bool(json_lines) and parsed == len(json_lines),
           f"{parsed}/{len(json_lines)}")
 
-    # 19: stop the isolated stack only; volumes are kept.
-    stack.run("stop")
+    # 19: stop the isolated stack only; volumes are kept. --down also removes its containers
+    # and network (deliberately never with -v).
+    stack.run("down" if args.down else "stop")
     failed = [name for name, ok, _ in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} checks passed")
     return 1 if failed else 0
