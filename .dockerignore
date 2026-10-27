@@ -1,0 +1,53 @@
+# Only what the image needs: Dockerfile COPYs alembic.ini, pyproject.toml, alembic/, app/
+# and requirements/runtime.txt. Everything else stays out of the build context.
+
+# secrets and local configuration
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/*.env
+!deploy/.env.example
+*.pem
+*.key
+
+# version control and editors
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# Python environments and caches
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+*.egg-info
+build
+dist
+
+# data that must never enter an image
+storage
+*.dump
+*.sql.gz
+*.backup
+**/*.safetensors
+**/*.bin
+**/*.gguf
+models
+hf-cache
+.cache
+
+# not needed at run time
+tests
+docs
+docker
+deploy
+scripts
+*.md

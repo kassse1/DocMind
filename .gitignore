@@ -8,3 +8,8 @@ __pycache__/
 htmlcov/
 .env
 storage/
+# deployment secrets (deploy/.env.example is the committed template)
+deploy/.env
+deploy/*.env
+# never commit database dumps
+*.dump
