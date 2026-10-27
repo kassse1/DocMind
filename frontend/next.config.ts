@@ -11,6 +11,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The container image (frontend/Dockerfile) sets NEXT_OUTPUT=standalone: a minimal
+  // server.js with only the traced dependencies. Local `next dev` / `next start` are unchanged.
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {

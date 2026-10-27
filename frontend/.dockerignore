@@ -1,0 +1,18 @@
+# Only sources and the lock file enter the build context.
+node_modules
+.next
+out
+coverage
+*.tsbuildinfo
+next-env.d.ts
+
+# local configuration and secrets (DOCMIND_API_URL comes from the container environment)
+.env
+.env.*
+
+# not needed to build
+tests
+vitest.config.ts
+README.md
+Dockerfile
+.dockerignore
