@@ -5,11 +5,14 @@ create_engine() is lazy: no connection is opened until the first query, so the a
 starts (and /health answers) even when PostgreSQL is down.
 """
 
+import math
 from collections.abc import Iterator
+from weakref import WeakKeyDictionary
 
 from fastapi import Request
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings
 
@@ -48,13 +51,36 @@ def get_db_session(request: Request) -> Iterator[Session]:
         session.close()
 
 
+_probe_engines: "WeakKeyDictionary[Engine, Engine]" = WeakKeyDictionary()
+
+
+def _probe_engine(engine: Engine, connect_timeout_s: int) -> Engine:
+    """Same database, no pool: every readiness check opens a fresh connection.
+
+    A pooled connection to a server that hangs (frozen process, partition) blocks in the
+    pre-ping read forever: the server-side statement_timeout never fires and the client
+    connect_timeout only covers new connections. A fresh connection is bounded by
+    connect_timeout (it includes waiting for the server's startup reply), so readiness
+    answers 503 within seconds instead of hanging a worker thread.
+    """
+    probe = _probe_engines.get(engine)
+    if probe is None:
+        probe = create_engine(
+            engine.url, poolclass=NullPool, connect_args={"connect_timeout": connect_timeout_s}
+        )
+        _probe_engines[engine] = probe
+    return probe
+
+
 def ping_database(engine: Engine, timeout_ms: int) -> bool:
-    """Run trivial queries with a server-side timeout; True when the schema is at the
-    Alembic head of this code. Raises on any connection failure."""
+    """Run trivial queries on a fresh connection, bounded by timeout_ms both for connecting
+    and (server side) for the queries; True when the schema is at the Alembic head of this
+    code. Raises on any connection failure."""
     from app.core.schema import schema_is_current
 
-    with engine.connect() as conn:
-        # set_config(..., true) is transaction-local, so the timeout never leaks to pooled reuse.
+    probe = _probe_engine(engine, max(1, math.ceil(timeout_ms / 1000)))
+    with probe.connect() as conn:
+        # set_config(..., true) is transaction-local (the connection is not reused anyway).
         conn.execute(
             text("SELECT set_config('statement_timeout', :t, true)"), {"t": str(timeout_ms)}
         )
