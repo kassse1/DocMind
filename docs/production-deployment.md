@@ -257,6 +257,9 @@ logout, rate limiting, restarts, a SIGKILLed job being reclaimed, leak-free JSON
 - [ ] Both images build; `docker run --rm --entrypoint id docmind:local -u` = 10001,
       `docmind-web:local` = 1000.
 - [ ] Throwaway release check: 31/31.
+- [ ] Failure drill (`python scripts/failure_drill.py --work-dir <empty dir outside the repo>`,
+      throwaway `docmind-drill-<hex>` project, no volumes): no FAIL; KNOWN items are the
+      residual risks in [phase-12-audit.md](phase-12-audit.md).
 - [ ] Fresh backup of the target stack + `verify` + `restore-drill`.
 - [ ] New migrations read; `deploy/.env` reviewed (prod, secrets set, no trusted proxies).
 - [ ] GitHub Actions green on the release commit (not yet run for this repository).

@@ -56,6 +56,12 @@ Work in progress.
   volumes, configuration invariants tested in pytest, CI for both images. Guide, release
   checklist and rollback: [docs/production-deployment.md](docs/production-deployment.md).
 
+- **Phase 12 (in review):** final security and release audit: three medium findings fixed
+  (an open redirect after sign-in, unbounded BFF auth bodies, readiness hanging on a frozen
+  database), one low (500 instead of 503 on document routes during outages), a failure
+  drill on a throwaway stack, residual risks and a release decision:
+  [docs/phase-12-audit.md](docs/phase-12-audit.md).
+
 ## Quick start (Windows PowerShell)
 
 ```powershell
@@ -495,6 +501,7 @@ All errors use the standard envelope `{"error": {"code", "message", "details"}}`
 | 422 | `unsupported_text_encoding` | TXT that is not UTF-8 / UTF-16 with BOM (e.g. cp1251) |
 | 422 | `too_many_pages` / `archive_too_large` | Resource limits (PDF pages, DOCX uncompressed size) |
 | 422 | `validation_error` | No `file` field in the form |
+| 503 | `database_unavailable` | PostgreSQL unreachable or pool exhausted (all document routes; before Phase 12 this was a 500) |
 
 ### How an upload is processed
 
