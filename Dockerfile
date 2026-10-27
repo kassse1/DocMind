@@ -40,10 +40,14 @@ WORKDIR /app
 COPY alembic.ini pyproject.toml ./
 COPY alembic ./alembic
 COPY app ./app
+# Progress bars would break one-JSON-object-per-line logs; onnxruntime (a PyMuPDF
+# dependency) otherwise enables its own telemetry.
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/data/hf \
+    HF_HUB_DISABLE_PROGRESS_BARS=1 \
+    ORT_DISABLE_TELEMETRY=1 \
     DOCMIND_STORAGE_DIR=/data/storage \
     DOCMIND_LOG_FORMAT=json \
     DOCMIND_WORKER_HEARTBEAT_FILE=/tmp/docmind-worker-heartbeat
