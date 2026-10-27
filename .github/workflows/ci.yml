@@ -1,0 +1,124 @@
+# Pull-request and push CI. No secrets, no deployments, no image publishing.
+# Real-model tests (Ollama, embedding model downloads) are opt-in and never run here.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: read the repository, nothing else.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+      - run: pip install --require-hashes --no-deps -r requirements/dev.txt
+      - run: ruff check .
+      - name: Trailing whitespace and conflict markers
+        run: git diff --check $(git hash-object -t tree /dev/null) HEAD
+
+  test:
+    # Unit tests plus PostgreSQL integration tests and Alembic validation (the integration
+    # suite builds the schema with `alembic upgrade head`, runs downgrade/upgrade cycles and
+    # a drift check against the models).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
+        env:
+          POSTGRES_USER: docmind
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: docmind_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U docmind -d docmind_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DOCMIND_TEST_DATABASE_URL: postgresql+psycopg://docmind:ci-only-not-a-secret@127.0.0.1:5432/docmind_test
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+      - run: pip install --require-hashes --no-deps -r requirements/dev.txt
+      # The package itself, without re-resolving dependencies.
+      - run: pip install --no-deps --no-build-isolation -e .
+      - name: Alembic heads (exactly one)
+        run: test "$(alembic heads | wc -l)" -eq 1
+      - name: Tests (unit + PostgreSQL integration)
+        # The real-model modules skip themselves without their opt-in flags; any other skip
+        # is unexpected, so the run fails if more than those two skip.
+        run: |
+          python -m pytest -q -rs | tee pytest.log
+          skipped=$(grep -c '^SKIPPED' pytest.log || true)
+          echo "skipped: $skipped"
+          test "$skipped" -le 2
+
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build image (not pushed)
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: docmind:ci
+      - name: Image runs as non-root and imports the app
+        run: |
+          test "$(docker run --rm --entrypoint id docmind:ci -u)" = "10001"
+          docker run --rm --entrypoint python docmind:ci -c "import app.main, app.worker.__main__"
+      - name: Compose file is valid
+        run: |
+          printf 'POSTGRES_PASSWORD=x\nDOCMIND_JWT_SECRET_KEY=%s\n' "$(head -c 48 /dev/urandom | base64)" > /tmp/ci.env
+          docker compose -f deploy/compose.yaml --env-file /tmp/ci.env config --quiet
+
+  audit:
+    # Known-vulnerability scan of the locked runtime and dev dependencies. Advisory: a new
+    # CVE in a pinned dependency should be triaged, not silently block unrelated PRs.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pip-audit==2.9.0
+      - run: pip-audit --strict --disable-pip -r requirements/dev.txt
+      # Not --strict: torch's "+cpu" build is not on PyPI, so pip-audit reports it as
+      # skipped (not audited); track torch advisories manually.
+      - run: pip-audit --disable-pip -r requirements/runtime.txt
