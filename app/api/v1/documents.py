@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_storage
 from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
+from app.core.errors import DatabaseUnavailableRoute
 from app.ingestion.storage import FileStorage
 from app.models import User
 from app.schemas.documents import (
@@ -17,7 +18,8 @@ from app.schemas.documents import (
 )
 from app.services import documents as document_service
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+# Database outages answer 503 database_unavailable like the other data routers, not 500.
+router = APIRouter(prefix="/documents", tags=["documents"], route_class=DatabaseUnavailableRoute)
 
 DEFAULT_PAGE = 50
 MAX_PAGE = 200
