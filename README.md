@@ -68,8 +68,8 @@ citations and abstentions, account and sessions.
   migrations, non-root read-only containers, loopback-only ports, optional Ollama profile.
 - Backup, archive verification and restore drill (`scripts/db_backup.py`), a throwaway
   end-to-end release check and a failure drill that create no Docker volumes.
-- CI workflow (lint, PostgreSQL tests, frontend, image builds, dependency audit); it has
-  **not yet run on GitHub**.
+- GitHub Actions CI on every push to `main` and every pull request: lint, PostgreSQL
+  tests, frontend, both image builds, dependency audit (first green run on commit `7f5593c`).
 
 ## Architecture
 
@@ -110,7 +110,7 @@ appears in it. Details and trust boundaries: [docs/production-deployment.md](doc
 | Auth | argon2-cffi, PyJWT |
 | Web | Next.js 16, React 19, TypeScript (strict), Tailwind CSS 4 |
 | Quality | pytest, Ruff, Vitest, Testing Library, ESLint, actionlint |
-| Ops | Docker, Docker Compose, GitHub Actions (configured, not yet run) |
+| Ops | Docker, Docker Compose, GitHub Actions |
 
 ## Quick start (Windows PowerShell)
 
@@ -248,7 +248,6 @@ outages), the residual risks and the release decision. To report a problem, see
 - **R2:** behind the BFF the API sees one client address, so login, registration and
   refresh rate limits are shared by all users (safe against spoofing; one abuser can use up
   the budget). Fix: a reverse proxy that overwrites `X-Forwarded-For`.
-- GitHub Actions are configured but have not run on GitHub yet.
 - RAG quality was measured with one small local model on small synthetic sets; grounding
   checks verify citations, quotes and numbers, not that the answer follows from them.
 - No email verification, password reset or MFA; registration is open.

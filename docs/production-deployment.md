@@ -262,7 +262,7 @@ logout, rate limiting, restarts, a SIGKILLed job being reclaimed, leak-free JSON
       residual risks in [phase-12-audit.md](phase-12-audit.md).
 - [ ] Fresh backup of the target stack + `verify` + `restore-drill`.
 - [ ] New migrations read; `deploy/.env` reviewed (prod, secrets set, no trusted proxies).
-- [ ] GitHub Actions green on the release commit (not yet run for this repository).
+- [ ] GitHub Actions green on the release commit.
 - [ ] Release notes list migrations and any manual steps.
 
 ## Rollback
