@@ -1,4 +1,4 @@
-# DocMind deployment stack: postgres, one-shot migrate, api, worker (+ optional ollama).
+# DocMind deployment stack: postgres, one-shot migrate, api, worker, web (+ optional ollama).
 #
 #   Copy-Item deploy\.env.example deploy\.env    # then set the secrets in it
 #   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
@@ -11,8 +11,9 @@
 # Security posture: every container runs as a non-root user (postgres drops to its own
 # user), all Linux capabilities dropped except what the PostgreSQL entrypoint needs,
 # no-new-privileges, read-only root filesystems for the app containers, no Docker socket,
-# no privileged mode. The API is published on 127.0.0.1 only; PostgreSQL and Ollama are
-# reachable only from the internal "db" network.
+# no privileged mode. The web app and the API are published on 127.0.0.1 only; PostgreSQL
+# and Ollama are reachable only from the internal "db" network, the API from "web" over
+# the internal "app" network.
 
 name: docmind-stack
 
@@ -25,7 +26,8 @@ x-app: &app
     DOCMIND_ENVIRONMENT: ${DOCMIND_ENVIRONMENT:-prod}
     DOCMIND_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docmind}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-docmind}
     DOCMIND_JWT_SECRET_KEY: ${DOCMIND_JWT_SECRET_KEY:?set DOCMIND_JWT_SECRET_KEY in deploy/.env}
-    DOCMIND_ALLOWED_HOSTS: ${DOCMIND_ALLOWED_HOSTS:-localhost,127.0.0.1}
+    # "api" is the Host header of the web container's requests (http://api:8000).
+    DOCMIND_ALLOWED_HOSTS: api,${DOCMIND_ALLOWED_HOSTS:-localhost,127.0.0.1}
     DOCMIND_TRUSTED_PROXIES: ${DOCMIND_TRUSTED_PROXIES:-}
     DOCMIND_LOG_LEVEL: ${DOCMIND_LOG_LEVEL:-INFO}
     DOCMIND_EMBEDDING_BACKEND: ${DOCMIND_EMBEDDING_BACKEND:-sentence-transformers}
@@ -102,6 +104,7 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
+    networks: [db, egress, app]
     stop_grace_period: 30s
     mem_limit: 3g
 
@@ -124,6 +127,36 @@ services:
     stop_grace_period: 60s
     mem_limit: 3g
 
+  # Next.js server: the pages and the BFF that keeps refresh tokens in an HttpOnly cookie.
+  web:
+    image: docmind-web:local
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    environment:
+      # Internal service URL; never localhost (that would be the web container itself).
+      DOCMIND_API_URL: http://api:8000
+      # Fixed off: a browser can send any X-Forwarded-For and the API would key rate limits
+      # on it. Turn on only behind a reverse proxy that overwrites the header (docs).
+      DOCMIND_BFF_FORWARD_CLIENT_IP: "false"
+    ports:
+      - "127.0.0.1:${DOCMIND_WEB_PORT:-3080}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [app, edge]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /app/.next/cache:size=64m,uid=1000,gid=1000,mode=0700
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # tini as PID 1 forwards SIGTERM to Node; Next.js drains in-flight requests.
+    init: true
+    stop_grace_period: 20s
+    mem_limit: 512m
+    restart: unless-stopped
+
   ollama:
     profiles: ["ollama"]
     image: ollama/ollama:0.40.11@sha256:dea72d1e22270fe095b68fdf756d2b489d615643c5a2eaebbc5f569181e322d8
@@ -142,6 +175,11 @@ networks:
     internal: true
   # For outbound access (model downloads, a host or remote LLM) and the published API port.
   egress: {}
+  # Internal: web -> api only.
+  app:
+    internal: true
+  # Only for publishing the web port; web needs no other route.
+  edge: {}
 
 volumes:
   pgdata:

@@ -24,3 +24,6 @@ services:
   migrate:
     volumes:
       - storage:/data/storage
+  web:
+    ports: !override
+      - "127.0.0.1:${DOCMIND_WEB_PORT:-3181}:3000"

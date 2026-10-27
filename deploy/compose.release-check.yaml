@@ -1,0 +1,36 @@
+# Override for a throwaway release check of the full stack (scripts/smoke_test.py --down).
+# Unlike compose.smoke.yaml it creates NO Docker volumes, so nothing persists afterwards:
+#
+#   docker compose -p docmind-relcheck -f deploy/compose.yaml -f deploy/compose.release-check.yaml `
+#     --env-file <generated env outside the repo> up -d
+#
+# - PostgreSQL data on tmpfs: gone when the container is removed.
+# - Uploaded files in a host directory chosen for this run (CHECK_STORAGE_DIR).
+# - The host's Hugging Face cache mounted read-only (HOST_HF_HUB); a tmpfs under it for the
+#   few files the libraries write next to the cache.
+# - Ports that do not collide with the deployment or smoke stacks.
+
+x-app-volumes: &app-volumes
+  volumes: !override
+    - ${CHECK_STORAGE_DIR:?set CHECK_STORAGE_DIR}:/data/storage
+    - ${HOST_HF_HUB:?set HOST_HF_HUB}:/data/hf/hub:ro
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+    - /data/hf:size=16m,mode=1777
+
+services:
+  postgres:
+    volumes: !reset []
+    tmpfs:
+      - /var/lib/postgresql/data:size=1g
+  migrate:
+    <<: *app-volumes
+  api:
+    <<: *app-volumes
+    ports: !override
+      - "127.0.0.1:${DOCMIND_API_PORT:-8281}:8000"
+  worker:
+    <<: *app-volumes
+  web:
+    ports: !override
+      - "127.0.0.1:${DOCMIND_WEB_PORT:-3281}:3000"
