@@ -1,0 +1,8 @@
+# Files consumed inside Linux containers and CI keep LF line endings on every checkout
+# (Windows core.autocrlf would otherwise turn them into CRLF).
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+requirements/*.txt text eol=lf
+*.sh text eol=lf

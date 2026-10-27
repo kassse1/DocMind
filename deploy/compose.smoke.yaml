@@ -1,0 +1,26 @@
+# Override for the isolated end-to-end smoke test (scripts/smoke_test.py). Always run it
+# under its own project name so it never touches the developer or deployment stacks:
+#
+#   docker compose -p docmind-smoke -f deploy/compose.yaml -f deploy/compose.smoke.yaml `
+#     --env-file <generated smoke env> up -d
+#
+# - The host's Hugging Face cache is mounted read-only, so the embedding model is not
+#   downloaded again (HOST_HF_HUB = %USERPROFILE%\.cache\huggingface\hub).
+# - Generation uses the deterministic fake unless overridden (it is refused in prod, hence
+#   DOCMIND_ENVIRONMENT=test); a second run with prod and a real Ollama is separate.
+# - A short job lease, so the restart test sees an interrupted job reclaimed quickly.
+
+services:
+  api:
+    ports: !override
+      - "127.0.0.1:${DOCMIND_API_PORT:-8181}:8000"
+    volumes:
+      - storage:/data/storage
+      - ${HOST_HF_HUB:?set HOST_HF_HUB}:/data/hf/hub:ro
+  worker:
+    volumes:
+      - storage:/data/storage
+      - ${HOST_HF_HUB:?set HOST_HF_HUB}:/data/hf/hub:ro
+  migrate:
+    volumes:
+      - storage:/data/storage

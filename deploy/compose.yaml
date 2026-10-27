@@ -1,0 +1,150 @@
+# DocMind deployment stack: postgres, one-shot migrate, api, worker (+ optional ollama).
+#
+#   Copy-Item deploy\.env.example deploy\.env    # then set the secrets in it
+#   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+#   docker compose -f deploy/compose.yaml --env-file deploy/.env --profile ollama up -d
+#
+# Separate from the development compose file in the repository root: its own project name
+# ("docmind-stack"), its own volumes, no published PostgreSQL port. Never run
+# `docker compose down -v` here unless you mean to delete this stack's data.
+#
+# Security posture: every container runs as a non-root user (postgres drops to its own
+# user), all Linux capabilities dropped except what the PostgreSQL entrypoint needs,
+# no-new-privileges, read-only root filesystems for the app containers, no Docker socket,
+# no privileged mode. The API is published on 127.0.0.1 only; PostgreSQL and Ollama are
+# reachable only from the internal "db" network.
+
+name: docmind-stack
+
+x-app: &app
+  image: docmind:local
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  environment: &app-env
+    DOCMIND_ENVIRONMENT: ${DOCMIND_ENVIRONMENT:-prod}
+    DOCMIND_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docmind}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-docmind}
+    DOCMIND_JWT_SECRET_KEY: ${DOCMIND_JWT_SECRET_KEY:?set DOCMIND_JWT_SECRET_KEY in deploy/.env}
+    DOCMIND_ALLOWED_HOSTS: ${DOCMIND_ALLOWED_HOSTS:-localhost,127.0.0.1}
+    DOCMIND_TRUSTED_PROXIES: ${DOCMIND_TRUSTED_PROXIES:-}
+    DOCMIND_LOG_LEVEL: ${DOCMIND_LOG_LEVEL:-INFO}
+    DOCMIND_EMBEDDING_BACKEND: ${DOCMIND_EMBEDDING_BACKEND:-sentence-transformers}
+    DOCMIND_EMBEDDING_DEVICE: cpu
+    # The model must already be in the hf-cache volume unless downloads are allowed
+    # (see "Model cache" in README).
+    DOCMIND_EMBEDDING_ALLOW_DOWNLOAD: ${DOCMIND_EMBEDDING_ALLOW_DOWNLOAD:-false}
+    HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+    DOCMIND_GENERATION_BACKEND: ${DOCMIND_GENERATION_BACKEND:-disabled}
+    DOCMIND_GENERATION_BASE_URL: ${DOCMIND_GENERATION_BASE_URL:-http://ollama:11434/v1}
+    DOCMIND_GENERATION_MODEL: ${DOCMIND_GENERATION_MODEL:-qwen2.5:3b-instruct}
+    DOCMIND_GENERATION_TOKENIZER: ${DOCMIND_GENERATION_TOKENIZER:-}
+    DOCMIND_JOB_LEASE_TIMEOUT_S: ${DOCMIND_JOB_LEASE_TIMEOUT_S:-1800}
+  volumes:
+    - storage:/data/storage
+    - hf-cache:/data/hf
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  networks: [db, egress]
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-docmind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-docmind}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No "ports": the database is only reachable from the internal db network.
+    networks: [db]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    cap_drop: [ALL]
+    # What the official entrypoint needs to chown the data directory and drop to postgres.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+    shm_size: 256m
+    mem_limit: 1g
+    restart: unless-stopped
+
+  # One-shot: applies migrations once per deployment, then exits. api and worker start only
+  # after it succeeded, so neither ever runs against an older schema (and both re-check it).
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 512m
+
+  api:
+    <<: *app
+    ports:
+      # Local only. Put an HTTPS reverse proxy in front for anything else.
+      - "127.0.0.1:${DOCMIND_API_PORT:-8080}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # Readiness: database reachable and schema at head. Never loads the model.
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    stop_grace_period: 30s
+    mem_limit: 3g
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "healthcheck", "--max-age", "60"]
+      interval: 20s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    # SIGTERM lets the job in progress finish; an unfinished job is reclaimed after its
+    # lease (DOCMIND_JOB_LEASE_TIMEOUT_S) by any worker.
+    stop_grace_period: 60s
+    mem_limit: 3g
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:0.40.11@sha256:dea72d1e22270fe095b68fdf756d2b489d615643c5a2eaebbc5f569181e322d8
+    volumes:
+      - ollama-models:/root/.ollama
+    # Reachable as http://ollama:11434 from api/worker only; no published port. Pull a model
+    # once: docker compose ... exec ollama ollama pull qwen2.5:3b-instruct (about 1.9 GB).
+    networks: [db, egress]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 6g
+    restart: unless-stopped
+
+networks:
+  # Internal: no route to the outside world. PostgreSQL lives only here.
+  db:
+    internal: true
+  # For outbound access (model downloads, a host or remote LLM) and the published API port.
+  egress: {}
+
+volumes:
+  pgdata:
+  storage:
+  hf-cache:
+  ollama-models:
