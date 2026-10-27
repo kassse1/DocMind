@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { AskIcon, CloseIcon, FileIcon, HomeIcon, MenuIcon, SearchIcon, UserIcon } from "@/components/icons";
@@ -75,6 +75,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    // Return focus to the control that opened the drawer.
+    menuButton.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (status === "anonymous") {
@@ -84,10 +90,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!menuOpen) return;
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setMenuOpen(false);
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && closeMenu();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen]);
+  }, [menuOpen, closeMenu]);
 
   if (status !== "authenticated") {
     return (
@@ -134,7 +140,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             type="button"
             className="absolute inset-0 bg-black/40"
             aria-label="Close menu"
-            onClick={() => setMenuOpen(false)}
+            tabIndex={-1}
+            onClick={closeMenu}
           />
           <nav
             id="mobile-nav"
@@ -143,7 +150,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <div className="flex items-center justify-between px-2">
               <Logo />
-              <Button variant="ghost" size="sm" aria-label="Close menu" onClick={() => setMenuOpen(false)}>
+              <Button variant="ghost" size="sm" aria-label="Close menu" onClick={closeMenu} autoFocus>
                 <CloseIcon />
               </Button>
             </div>
@@ -156,6 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border bg-surface/90 px-4 backdrop-blur sm:px-6">
           <div className="flex items-center gap-2 lg:invisible">
             <Button
+              ref={menuButton}
               variant="ghost"
               size="sm"
               aria-label="Open menu"

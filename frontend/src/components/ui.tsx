@@ -21,7 +21,7 @@ const VARIANTS: Record<Variant, string> = {
   primary: "bg-accent text-accent-foreground hover:bg-accent-hover shadow-sm",
   secondary: "bg-surface text-foreground border border-border-strong hover:bg-surface-muted",
   ghost: "text-muted hover:text-foreground hover:bg-surface-muted",
-  danger: "bg-danger text-white hover:opacity-90 shadow-sm",
+  danger: "bg-danger text-danger-foreground hover:opacity-90 shadow-sm",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -291,7 +291,7 @@ export function ConfirmDialog({
         event.preventDefault();
         if (!pending) onCancel();
       }}
-      className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-border bg-surface p-0 text-foreground shadow-xl"
+      className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-border bg-surface p-0 text-left text-foreground shadow-xl"
     >
       {open && (
         <div className="space-y-4 p-6">

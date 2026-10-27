@@ -191,9 +191,12 @@ export function Uploader({ onUploaded }: { onUploaded: (document: DocumentRead) 
               <span className="min-w-0 truncate font-medium">{item.file.name}</span>
               {item.state === "uploading" && <Badge tone="info">Uploading…</Badge>}
               {item.state === "done" && (
-                <span className="flex items-center gap-2">
-                  <span className="text-muted">Uploaded, indexing in the background</span>
-                  <StatusBadge status={item.document.status} />
+                // The live indexing status is in the library below; this row is the upload result only.
+                <span className="flex items-center gap-2 text-muted">
+                  <Badge tone="success">Uploaded</Badge>
+                  <Link href={`/documents/${item.document.id}`} className="font-medium text-accent hover:underline">
+                    Details
+                  </Link>
                 </span>
               )}
               {item.state === "error" && (
