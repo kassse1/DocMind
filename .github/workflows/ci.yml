@@ -126,10 +126,23 @@ jobs:
         run: |
           test "$(docker run --rm --entrypoint id docmind:ci -u)" = "10001"
           docker run --rm --entrypoint python docmind:ci -c "import app.main, app.worker.__main__"
-      - name: Compose file is valid
+      - name: Build web image (not pushed)
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: frontend
+          push: false
+          load: true
+          tags: docmind-web:ci
+      - name: Web image runs as non-root and keeps the API URL out of client bundles
         run: |
-          printf 'POSTGRES_PASSWORD=x\nDOCMIND_JWT_SECRET_KEY=%s\n' "$(head -c 48 /dev/urandom | base64)" > /tmp/ci.env
+          test "$(docker run --rm --entrypoint id docmind-web:ci -u)" = "1000"
+          test "$(docker run --rm --entrypoint sh docmind-web:ci -c "grep -rl DOCMIND_API_URL /app/.next/static | wc -l")" = "0"
+      - name: Compose files are valid
+        run: |
+          printf 'POSTGRES_PASSWORD=x\nDOCMIND_JWT_SECRET_KEY=%s\nHOST_HF_HUB=/tmp/hub\nCHECK_STORAGE_DIR=/tmp/storage\n' "$(head -c 48 /dev/urandom | base64)" > /tmp/ci.env
           docker compose -f deploy/compose.yaml --env-file /tmp/ci.env config --quiet
+          docker compose -p ci-smoke -f deploy/compose.yaml -f deploy/compose.smoke.yaml --env-file /tmp/ci.env config --quiet
+          docker compose -p ci-relcheck -f deploy/compose.yaml -f deploy/compose.release-check.yaml --env-file /tmp/ci.env config --quiet
 
   audit:
     # Known-vulnerability scan of the locked runtime and dev dependencies. Advisory: a new
