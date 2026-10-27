@@ -1,5 +1,8 @@
 # DocMind deployment and operations (Phase 9)
 
+Phase 11 added the web frontend to this stack, backup tooling and a release checklist: see
+[production-deployment.md](production-deployment.md) for the current guide.
+
 This is a local, single-host deployment for evaluation and portfolio use. It is **not**
 certified production-ready: that needs a security review, HTTPS in front, monitoring, and
 operational experience with real load. Known risks are listed at the end.

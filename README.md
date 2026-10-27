@@ -50,6 +50,12 @@ Work in progress.
   HttpOnly cookie (backend unchanged). Plan and verified API contract:
   [docs/phase-10-plan.md](docs/phase-10-plan.md).
 
+- **Phase 11 (in review):** deployment readiness. The web app runs in the Compose stack next
+  to the API, worker and PostgreSQL (loopback ports only, PostgreSQL never published),
+  backup/verify/restore-drill tooling, a throwaway release check that creates no Docker
+  volumes, configuration invariants tested in pytest, CI for both images. Guide, release
+  checklist and rollback: [docs/production-deployment.md](docs/production-deployment.md).
+
 ## Quick start (Windows PowerShell)
 
 ```powershell

@@ -103,4 +103,5 @@ Production `next start` sets the cookie `Secure`. Browsers accept that on
   the 200 newest documents and say so.
 - The upload size hint is the backend default (10 MiB); a server with another
   `DOCMIND_MAX_UPLOAD_BYTES` still decides, and its 413 message is shown.
-- Not containerized yet; the Phase 9 Compose stack is unchanged.
+- Container: `frontend/Dockerfile` (standalone output, non-root); it runs as the `web`
+  service of `deploy/compose.yaml`, see [docs/production-deployment.md](../docs/production-deployment.md).
