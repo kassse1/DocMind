@@ -254,7 +254,10 @@ def test_commit_failure_removes_stored_file(
 
     response = _upload(client, "a.txt", b"other text")
 
-    assert response.status_code == 500
+    # A lost connection is reported as an outage (Phase 12: documents routes use
+    # DatabaseUnavailableRoute), and nothing is left behind.
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "database_unavailable"
     assert _documents(pg_engine) == []
     assert _stored_files(storage_dir) == []
 
