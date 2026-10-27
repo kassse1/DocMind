@@ -37,6 +37,13 @@ Work in progress.
   list/detail/delete, and a non-destructive migration of the single-user data. See
   [Authentication and multi-user isolation](#authentication-and-multi-user-isolation).
 
+- **Phase 9 (done, pending review):** refresh-token sessions with rotation, reuse detection
+  and immediate revocation (logout, logout everywhere), PostgreSQL-backed auth rate limits,
+  security headers, trusted hosts, optional CORS, production config guards, JSON logs with
+  request ids, schema-aware readiness, worker heartbeat and cleanup, a non-root Docker image,
+  an isolated Compose stack with an end-to-end smoke test, and GitHub Actions CI. Not a
+  claim of production readiness. See [docs/deployment.md](docs/deployment.md).
+
 ## Quick start (Windows PowerShell)
 
 ```powershell
@@ -109,6 +116,16 @@ App settings use the `DOCMIND_` prefix and are read from the environment or `.en
 | `DOCMIND_JOB_LEASE_TIMEOUT_S` | `1800` | A `running` job older than this is assumed abandoned and reclaimed |
 | `DOCMIND_JOB_MAX_ATTEMPTS` | `3` | Attempts before a document is marked `failed` |
 | `DOCMIND_JOB_RETRY_DELAY_S` | `30` | Retry *n* waits *n* x this |
+| `DOCMIND_REFRESH_TOKEN_TTL_DAYS` / `DOCMIND_SESSION_MAX_AGE_DAYS` | `7` / `30` | Refresh token idle lifetime / absolute session lifetime |
+| `DOCMIND_RATE_LIMIT_ENABLED` | `true` | Auth rate limits (per-route specs `DOCMIND_RATE_LIMIT_*`: see [docs/deployment.md](docs/deployment.md)) |
+| `DOCMIND_TRUSTED_PROXIES` | empty | Proxies whose `X-Forwarded-For` is believed |
+| `DOCMIND_ALLOWED_HOSTS` | empty | Accepted `Host` headers; **required in prod** |
+| `DOCMIND_CORS_ALLOWED_ORIGINS` | empty | Browser origins; CORS off when empty, `*` refused in prod |
+| `DOCMIND_HSTS_ENABLED` | `false` | Send HSTS (only behind HTTPS) |
+| `DOCMIND_DOCS_ENABLED` | unset | `/docs` and `/openapi.json`; unset = on except in prod |
+| `DOCMIND_LOG_FORMAT` | `json` | `json` or `text` |
+| `DOCMIND_WORKER_HEARTBEAT_FILE` | unset | Worker liveness file for `python -m app.worker healthcheck` |
+| `DOCMIND_MAINTENANCE_INTERVAL_S` | `3600` | Worker cleanup of expired sessions and rate-limit counters |
 | `DOCMIND_TEST_DATABASE_URL` | unset | Enables integration tests; DB name must end in `_test` |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | — | Used by Docker Compose only |
 
@@ -259,8 +276,9 @@ Design notes:
 ## Authentication and multi-user isolation
 
 Every endpoint that touches user data requires `Authorization: Bearer <access token>`. The
-only public routes are `GET /health`, `GET /health/ready`, `POST /auth/register` and
-`POST /auth/login` (plus `/docs` and `/openapi.json` as in earlier phases). A test checks the
+only public routes are `GET /health`, `GET /health/ready`, `POST /auth/register`,
+`POST /auth/login` and `POST /auth/refresh` (plus `/docs` and `/openapi.json`, which are off
+in prod unless `DOCMIND_DOCS_ENABLED=true`). A test checks the
 OpenAPI schema so that any new route without authentication fails the build.
 
 ```text
@@ -287,13 +305,19 @@ Invoke-RestMethod "$api/auth/me" -Headers $headers          # {id, email, create
 Invoke-RestMethod "$api/documents" -Headers $headers        # only your documents
 ```
 
-Tokens expire after `DOCMIND_ACCESS_TOKEN_TTL_MINUTES` (15); log in again for a new one. Do not
-paste tokens into tickets or logs: anyone holding one acts as you until it expires.
+Access tokens expire after `DOCMIND_ACCESS_TOKEN_TTL_MINUTES` (15); exchange the refresh token
+from the login response at `POST /auth/refresh` for a new pair, and end the session with
+`POST /auth/logout` (Phase 9, details in [docs/deployment.md](docs/deployment.md#sessions-refresh-tokens-and-logout)).
+Do not paste tokens into tickets or logs: anyone holding one acts as you until it is revoked
+or expires.
 
 | Endpoint | Success | Errors |
 |---|---|---|
 | `POST /auth/register` | `201` public profile (never the hash) | `409 email_already_registered`, `422` invalid email, password outside 12..1024 characters, extra fields |
-| `POST /auth/login` | `200 {access_token, token_type: "bearer", expires_in}` | `401 invalid_credentials`: one response for unknown email, wrong password, inactive and password-less accounts |
+| `POST /auth/login` | `200 {access_token, token_type: "bearer", expires_in, refresh_token, refresh_expires_in}` | `401 invalid_credentials`: one response for unknown email, wrong password, inactive and password-less accounts; `429 rate_limited` |
+| `POST /auth/refresh` | `200` new token pair (the old refresh token is spent) | `401 invalid_refresh_token` (unknown, expired, revoked or reused: reuse revokes the session); `429` |
+| `POST /auth/logout` | `204`; body `{"all_sessions": true}` ends every session | `401` |
+| `GET /auth/sessions` | `200` your active sessions | `401` |
 | `GET /auth/me` | `200` public profile | `401` |
 | any protected route | as documented | `401 authentication_required` (no or non-Bearer credentials), `401 invalid_token` (anything wrong with the token, or the user is gone/inactive); both with `WWW-Authenticate: Bearer` |
 
@@ -305,7 +329,8 @@ paste tokens into tickets or logs: anyone holding one acts as you until it expir
   the parameters change. A login for an unknown account still runs one Argon2 verification,
   so response time does not reveal whether the email exists.
 - **Tokens**: PyJWT, HS256 only (explicit allowlist, so `alg: none` and algorithm confusion
-  are rejected), claims `sub` (user id), `iat`, `exp`, `iss`, `aud`, `typ = "access"`, `jti`,
+  are rejected), claims `sub` (user id), `sid` (session id, Phase 9), `iat`, `exp`, `iss`,
+  `aud`, `typ = "access"`, `jti`,
   all required on decode, UTC, 10 s clock-skew leeway. Tested rejections: expired, tampered,
   wrong key, HS512, `alg: none`, wrong issuer/audience/type, non-UUID or missing subject,
   missing claims, deleted, inactive or password-less user.
@@ -373,20 +398,19 @@ embeddings and search vectors. Downgrade drops the new columns, so password hash
 
 ### Security limitations
 
-JWT authentication alone does not make the service production-secure. Not implemented:
+JWT authentication alone does not make the service production-secure. Phase 9 added refresh
+sessions with immediate revocation and per-address/per-account rate limits (see
+[docs/deployment.md](docs/deployment.md)). Still not implemented:
 
-- no refresh tokens, logout or token revocation: a stolen token works until it expires
-  (15 minutes by default); deactivating the account or rotating the key are the only kill
-  switches;
 - no password reset, email verification or MFA; registration is open to anyone who can reach
   the server, and a 409 on registration reveals that an email is registered (login does not);
-- no rate limiting or lockout against password guessing; put the API behind a reverse proxy
-  that rate-limits `/auth/login` before exposing it;
+- rate limits do not stop distributed guessing from many addresses; a reverse proxy or WAF
+  is still needed before exposing the API;
 - HS256 means every process that verifies tokens can also mint them; separate signing and
   verification would need an asymmetric key (RS256/EdDSA);
 - no TLS in the app itself: run it only on localhost or behind HTTPS;
 - no roles or admin API; operator actions go through `python -m app.admin` on the server;
-- `/docs` and `/openapi.json` stay public as in earlier phases.
+- `/docs` and `/openapi.json` are public outside prod.
 
 ## Documents API
 
