@@ -102,7 +102,7 @@ is read on the server at run time and is not in the client bundles (checked in C
 ## Build, start, check, stop
 
 ```powershell
-cd C:\Users\Erasyl\Desktop\DocMind
+cd <path to your DocMind clone>
 docker compose -f deploy/compose.yaml --env-file deploy/.env build
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d
 docker compose -f deploy/compose.yaml --env-file deploy/.env ps        # all healthy, migrate exited (0)

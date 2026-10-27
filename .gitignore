@@ -11,5 +11,14 @@ storage/
 # deployment secrets (deploy/.env.example is the committed template)
 deploy/.env
 deploy/*.env
-# never commit database dumps
+# never commit database dumps, backups, logs or model weights
 *.dump
+*.sql.gz
+*.backup
+*.log
+*.safetensors
+*.gguf
+# tool caches and OS files
+.mypy_cache/
+.idea/
+.DS_Store

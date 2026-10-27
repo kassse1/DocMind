@@ -70,7 +70,7 @@ npm run dev                            # http://localhost:3000
 
 Use `http://localhost:3000`, not `127.0.0.1:3000`, so the cookie host stays the same. The
 backend's `DOCMIND_ALLOWED_HOSTS`, if set, must accept the host in `DOCMIND_API_URL`. Ask
-needs a generation backend configured on the API (see the root README); without one the
+needs a generation backend configured on the API (see [docs/guide.md](../docs/guide.md#question-answering-rag)); without one the
 page explains that question answering is unavailable and search keeps working.
 
 ## Checks
