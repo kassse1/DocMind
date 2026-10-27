@@ -181,4 +181,23 @@ describe("redirect targets", () => {
     expect(safeNextPath("/\\evil.example")).toBe("/dashboard");
     expect(safeNextPath(null)).toBe("/dashboard");
   });
+
+  it("refuses targets that URL parsing turns into another origin (Phase 12 finding)", () => {
+    // Tabs and newlines are removed by the URL parser: "/\t/evil" becomes "//evil".
+    for (const value of ["/\t/evil.example", "/\n/evil.example", "/\r\n/evil.example", "/\u0000/x"]) {
+      expect(safeNextPath(value)).toBe("/dashboard");
+      expect(new URL(safeNextPath(value), "http://localhost:3080").origin).toBe("http://localhost:3080");
+    }
+    // Percent-encoded separators stay inside the path.
+    expect(safeNextPath("/%09/evil.example")).toBe("/%09/evil.example");
+    expect(safeNextPath("/%2F%2Fevil.example")).toBe("/%2F%2Fevil.example");
+    expect(safeNextPath("/documents?x=1#top")).toBe("/documents?x=1#top");
+  });
+
+  it("the login page never navigates off-site for a crafted next parameter", () => {
+    // What useSearchParams hands over for ?next=/%09/evil.example: the decoded tab.
+    const decoded = new URLSearchParams("next=/%09/evil.example").get("next");
+    expect(decoded).toBe("/\t/evil.example");
+    expect(safeNextPath(decoded)).toBe("/dashboard");
+  });
 });

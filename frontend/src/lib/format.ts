@@ -27,10 +27,23 @@ export function classNames(...parts: Array<string | false | null | undefined>): 
   return parts.filter(Boolean).join(" ");
 }
 
-/** A redirect target from the query string, accepted only if it is a local path. */
+// Any base works: only whether the result stays on it matters.
+const LOCAL_BASE = "http://docmind.invalid";
+
+/**
+ * A redirect target from the query string, accepted only if it is a path on this origin.
+ * Checked the way the browser will resolve it: URL parsing drops tabs and newlines and
+ * treats "\" as "/", so "/\t/evil.example" or "/\evil.example" would leave the site.
+ */
 export function safeNextPath(value: string | null | undefined, fallback = "/dashboard"): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+  // Control characters and backslashes have no place in our own paths.
+  if (!value || !value.startsWith("/") || /[\u0000-\u001f\u007f\\]/.test(value)) return fallback;
+  let url: URL;
+  try {
+    url = new URL(value, LOCAL_BASE);
+  } catch {
     return fallback;
   }
-  return value;
+  if (url.origin !== LOCAL_BASE) return fallback;
+  return `${url.pathname}${url.search}${url.hash}`;
 }
