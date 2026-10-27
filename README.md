@@ -44,6 +44,12 @@ Work in progress.
   an isolated Compose stack with an end-to-end smoke test, and GitHub Actions CI. Not a
   claim of production readiness. See [docs/deployment.md](docs/deployment.md).
 
+- **Phase 10 (in review):** a Next.js web app in [frontend/](frontend/README.md): sign-in and
+  registration, dashboard, documents, semantic and hybrid search, Ask with citations and
+  abstentions, account and sessions. The Next.js server keeps the refresh token in an
+  HttpOnly cookie (backend unchanged). Plan and verified API contract:
+  [docs/phase-10-plan.md](docs/phase-10-plan.md).
+
 ## Quick start (Windows PowerShell)
 
 ```powershell

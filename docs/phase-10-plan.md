@@ -8,9 +8,8 @@ CLAUDE.md originally named React + Vite; the owner asked for Next.js for Phase 1
 server runtime is what makes an HttpOnly refresh cookie possible without backend changes
 (see "Auth strategy").
 
-**Blocker found in the audit:** Node.js is not installed on the development machine (not on
-PATH, not in the usual install locations, not in the registry, no Docker `node` image).
-Nothing in `frontend/` can be installed, type-checked, tested or built until it is.
+**Blocker found in the audit:** Node.js was not installed on the development machine. With
+the owner's approval Node.js 24.22.1 LTS (npm 11.19.1) was installed with winget.
 
 ## Verified API contract (`/api/v1`)
 
@@ -89,9 +88,13 @@ backend-for-frontend (BFF), without any backend change:
   triggers at most one refresh and one retry; a failed refresh logs out (no loops).
 - 429: the UI shows the `Retry-After` wait and does not retry automatically.
 - Rate limits are per client address: behind the BFF the backend sees the Next server's
-  address, so the BFF sends `X-Forwarded-For` with the browser's address and the deployment
-  sets `DOCMIND_TRUSTED_PROXIES` to the Next server. Without that, all users share one login
-  budget (documented, not silently ignored).
+  address. Next.js keeps a client-supplied `X-Forwarded-For` as is, so forwarding it by
+  default would let anyone pick their address and dodge the limits. Decision: the BFF
+  forwards it only with `DOCMIND_BFF_FORWARD_CLIENT_IP=true` (behind a reverse proxy that
+  sets it, with the Next server in `DOCMIND_TRUSTED_PROXIES`); otherwise all users share
+  the server's budget (safe, but one abuser can exhaust it; documented).
+- Data calls are proxied by a route handler, not `next.config` rewrites: rewrites are fixed
+  at build time (the backend URL would be baked into the build) and cannot restrict paths.
 
 Configuration: `DOCMIND_API_URL` (server only, e.g. `http://127.0.0.1:8001`). No secrets in
 `NEXT_PUBLIC_*`; the frontend needs no public variables at all.
